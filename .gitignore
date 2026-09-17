@@ -41,3 +41,20 @@ example
 # generated native folders
 /ios
 /android
+
+# --- acrescentado ao template do Expo ---
+
+# O template so ignorava `.env*.local`, mas o README manda criar `.env` com a
+# URL e a anon key do Supabase -- sem esta linha, o primeiro `git add .` depois
+# de configurar o projeto comita as credenciais. `.env.example` fica de fora do
+# ignore de proposito: e ele que documenta as variaveis.
+.env
+.env.*
+!.env.example
+
+# Estado local da CLI do Supabase (ref do projeto vinculado, versoes das
+# imagens). E de maquina, nao de projeto.
+supabase/.temp/
+
+# Vercel
+.vercel

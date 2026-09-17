@@ -16,5 +16,15 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    // As Edge Functions rodam em Deno, não em React Native: têm o global
+    // `Deno`, importam por `npm:` e `https:`, e nada disso existe pro
+    // compilador do app. Sem esta exclusão, `tsc --noEmit` do projeto acusa
+    // uma dúzia de erros que não são erros -- e aí ninguém mais roda o
+    // typecheck. A pasta tem `deno.json` próprio para ser checada por
+    // `deno check`.
+    "supabase"
   ]
 }
