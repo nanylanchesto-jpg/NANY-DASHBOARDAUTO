@@ -33,10 +33,44 @@ export type Produto = {
   preco_venda: number;
   ordem: number;
   ativo: boolean;
+  /** Apurado: soma da receita com o preço real das compras. 0 sem receita. */
   custo_unitario: number;
   lucro_unitario: number;
   tem_receita: boolean;
+  /** Palpite dela, pra ver margem antes de existir compra. Nunca é apuração. */
+  custo_estimado: number;
 };
+
+/**
+ * Qual custo a tela mostra, e de que natureza ele é.
+ *
+ * Um lugar só porque a regra tem que ser a MESMA em Cadastro, Vender e Hoje: um
+ * número com cara de apurado numa tela e de palpite na outra é pior que não ter
+ * o palpite. E a ordem importa -- o apurado sempre ganha do estimado, senão o
+ * palpite velho continuaria na tela depois da primeira nota lançada, que é
+ * justamente quando ele deixa de valer.
+ *
+ * `custo_unitario > 0` além de `tem_receita` porque receita cadastrada com
+ * ingrediente que nunca foi comprado ainda soma 0: tem receita e não tem custo.
+ */
+export type CustoDoProduto =
+  | { tipo: 'apurado'; custo: number; lucro: number }
+  | { tipo: 'estimado'; custo: number; lucro: number }
+  | { tipo: 'ausente' };
+
+export function custoDoProduto(produto: Produto): CustoDoProduto {
+  if (produto.tem_receita && produto.custo_unitario > 0) {
+    return { tipo: 'apurado', custo: produto.custo_unitario, lucro: produto.lucro_unitario };
+  }
+  if (produto.custo_estimado > 0) {
+    return {
+      tipo: 'estimado',
+      custo: produto.custo_estimado,
+      lucro: produto.preco_venda - produto.custo_estimado,
+    };
+  }
+  return { tipo: 'ausente' };
+}
 
 export type Fechamento = {
   dia: string;
@@ -247,6 +281,8 @@ export function useSalvarProduto() {
       ordem?: number;
       /** Produto com venda registrada não pode ser apagado (FK restrita): desativar é a saída. */
       ativo?: boolean;
+      /** Palpite de custo. `undefined` não mexe no que já está gravado. */
+      custo_estimado?: number;
     }) => {
       if (produto.id) {
         const { error } = await supabase
@@ -256,6 +292,9 @@ export function useSalvarProduto() {
             preco_venda: produto.preco_venda,
             ordem: produto.ordem ?? 0,
             ...(produto.ativo === undefined ? {} : { ativo: produto.ativo }),
+            ...(produto.custo_estimado === undefined
+              ? {}
+              : { custo_estimado: produto.custo_estimado }),
           })
           .eq('id', produto.id);
         if (error) throw new Error(error.message);
@@ -268,12 +307,47 @@ export function useSalvarProduto() {
           nome: produto.nome.trim(),
           preco_venda: produto.preco_venda,
           ordem: produto.ordem ?? 0,
+          custo_estimado: produto.custo_estimado ?? 0,
         })
         .select('id')
         .single();
       if (error) throw new Error(error.message);
       return (data as { id: string }).id;
     },
+    onSuccess: () => invalidarMovimento(qc),
+  });
+}
+
+/**
+ * Produto de revenda (Coca, água, salgadinho): ela compra pronto e vende pronto.
+ *
+ * Uma chamada só porque são quatro escritas dependentes -- ingrediente, produto,
+ * item de receita e, se ela informar, a primeira compra. Fazer em quatro idas e
+ * voltas deixaria um ingrediente órfão ou um produto sem receita quando o 3G do
+ * balcão cai no meio, e produto sem receita é exatamente o estado "lucro igual
+ * ao preço cheio" que isto existe pra acabar.
+ */
+export function useCriarProdutoDeRevenda() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      nome,
+      preco_venda,
+      quantidade = 0,
+      preco_pago = 0,
+    }: {
+      nome: string;
+      preco_venda: number;
+      /** 0 cria só o cadastro; o custo fica pendente até a primeira nota. */
+      quantidade?: number;
+      preco_pago?: number;
+    }) =>
+      rpc<string>('criar_produto_de_revenda', {
+        _nome: nome.trim(),
+        _preco_venda: preco_venda,
+        _quantidade: quantidade,
+        _preco_pago: preco_pago,
+      }),
     onSuccess: () => invalidarMovimento(qc),
   });
 }

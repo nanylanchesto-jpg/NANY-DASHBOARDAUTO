@@ -16,8 +16,10 @@ import {
 import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import {
+  custoDoProduto,
   useApagarItemReceita,
   useApagarProduto,
+  useCriarProdutoDeRevenda,
   useIngredientes,
   useProdutos,
   useReceita,
@@ -165,9 +167,18 @@ function CartaoProduto({
   const apagar = useApagarProduto();
   const [preco, setPreco] = useState(String(produto.preco_venda.toFixed(2)).replace('.', ','));
   const [nome, setNome] = useState(produto.nome);
+  // Vazio quando não há palpite, e não "0,00": um zero digitado no campo é
+  // indistinguível de um zero que só quer dizer "não estimei".
+  const [estimado, setEstimado] = useState(
+    produto.custo_estimado > 0 ? String(produto.custo_estimado.toFixed(2)).replace('.', ',') : '',
+  );
+
+  const custo = custoDoProduto(produto);
 
   const alterado =
-    nome.trim() !== produto.nome || Math.abs(numeroDeTexto(preco) - produto.preco_venda) > 0.001;
+    nome.trim() !== produto.nome ||
+    Math.abs(numeroDeTexto(preco) - produto.preco_venda) > 0.001 ||
+    Math.abs(numeroDeTexto(estimado) - produto.custo_estimado) > 0.001;
 
   return (
     <Cartao style={{ gap: Espaco.md }}>
@@ -184,10 +195,15 @@ function CartaoProduto({
               {produto.nome}
               {produto.ativo ? '' : ' (desativado)'}
             </Txt>
-            <Txt tipo="rotulo" tom={produto.tem_receita ? 'textoFraco' : 'atencao'}>
-              {produto.tem_receita
-                ? `custo ${dinheiro(produto.custo_unitario)} · lucro ${dinheiro(produto.lucro_unitario)}`
-                : 'sem receita — o custo ainda é R$ 0,00'}
+            {/* "estimado" escrito, não uma cor ou um til discreto: com a paleta
+                em preto e branco não sobra matiz pra dizer isso, e é a diferença
+                entre um número que ela pode levar pro fechamento e um que não. */}
+            <Txt tipo="rotulo" tom={custo.tipo === 'apurado' ? 'textoFraco' : 'atencao'}>
+              {custo.tipo === 'apurado'
+                ? `custo ${dinheiro(custo.custo)} · lucro ${dinheiro(custo.lucro)}`
+                : custo.tipo === 'estimado'
+                  ? `estimado: custo ${dinheiro(custo.custo)} · lucro ${dinheiro(custo.lucro)}`
+                  : 'sem receita e sem estimativa — o custo ainda é R$ 0,00'}
             </Txt>
           </View>
           <Txt tipo="numero">{dinheiro(produto.preco_venda)}</Txt>
@@ -207,6 +223,19 @@ function CartaoProduto({
             inputMode="decimal"
             keyboardType="decimal-pad"
           />
+          <Campo
+            rotulo="Custo estimado"
+            value={estimado}
+            onChangeText={setEstimado}
+            placeholder="deixe vazio se não quiser estimar"
+            inputMode="decimal"
+            keyboardType="decimal-pad"
+          />
+          <Txt tipo="rotulo" tom="textoFraco">
+            {custo.tipo === 'apurado'
+              ? 'A receita abaixo já dá o custo real, então esta estimativa fica guardada e não aparece mais nas telas.'
+              : 'Palpite para ver a margem enquanto o custo real não existe. Ele some sozinho assim que a receita tiver o preço das suas compras.'}
+          </Txt>
           {alterado ? (
             <Botao
               ocupado={salvar.isPending}
@@ -218,6 +247,7 @@ function CartaoProduto({
                     nome,
                     preco_venda: numeroDeTexto(preco),
                     ordem: produto.ordem,
+                    custo_estimado: numeroDeTexto(estimado),
                   });
                 } catch (falha) {
                   onErro(falha instanceof Error ? falha.message : 'Não consegui salvar.');
@@ -430,41 +460,140 @@ function EditorDeReceita({
 // Novos cadastros
 // ---------------------------------------------------------------------------
 
+/**
+ * Cadastro de produto, nos dois jeitos que ela realmente vende.
+ *
+ * FEITO POR MIM: hot-dog, suco. O custo sai da receita, que ela monta depois
+ * ingrediente a ingrediente. Até a primeira nota entrar, o custo é 0 -- e é pra
+ * essa espera que existe o palpite opcional.
+ *
+ * REVENDA: Coca, água, salgadinho. Comprado pronto, vendido pronto. Por baixo
+ * continua sendo produto + ingrediente + receita de 1 unidade, igualzinho ao
+ * hot-dog; o que muda é que a tela monta os três de uma vez, porque ninguém
+ * descobre sozinho que pra vender uma Coca precisa cadastrar um "ingrediente
+ * Coca". E o preço pago vira COMPRA de verdade, não um número digitado: entra
+ * no caixa do dia, soma no estoque e alimenta a média ponderada.
+ */
 function NovoProduto({ onErro }: { onErro: (mensagem: string | null) => void }) {
   const salvar = useSalvarProduto();
+  const criarRevenda = useCriarProdutoDeRevenda();
+
+  const [revenda, setRevenda] = useState(false);
   const [nome, setNome] = useState('');
   const [preco, setPreco] = useState('');
+  const [estimado, setEstimado] = useState('');
+  const [quantidade, setQuantidade] = useState('');
+  const [precoPago, setPrecoPago] = useState('');
 
+  const ocupado = salvar.isPending || criarRevenda.isPending;
   const pronto = nome.trim().length > 0 && numeroDeTexto(preco) > 0;
+
+  function limpar() {
+    setNome('');
+    setPreco('');
+    setEstimado('');
+    setQuantidade('');
+    setPrecoPago('');
+  }
 
   return (
     <Cartao tom="superficieAlt" style={{ gap: Espaco.md }}>
       <Txt tipo="corpo" negrito>
         Novo produto
       </Txt>
-      <Campo rotulo="Nome" value={nome} onChangeText={setNome} placeholder="Hot-dog" />
+
+      <View style={{ gap: Espaco.xs }}>
+        <Txt tipo="rotulo" tom="textoFraco">
+          Como este item chega no balcão
+        </Txt>
+        <Linha style={{ flexWrap: 'wrap', gap: Espaco.xs }}>
+          <Ficha rotulo="Eu faço" ativo={!revenda} onPress={() => setRevenda(false)} />
+          <Ficha rotulo="Compro pronto" ativo={revenda} onPress={() => setRevenda(true)} />
+        </Linha>
+      </View>
+
+      <Campo
+        rotulo="Nome"
+        value={nome}
+        onChangeText={setNome}
+        placeholder={revenda ? 'Coca lata 350ml' : 'Hot-dog'}
+      />
       <Campo
         rotulo="Preço de venda"
         value={preco}
         onChangeText={setPreco}
-        placeholder="10,00"
+        placeholder={revenda ? '5,00' : '10,00'}
         inputMode="decimal"
         keyboardType="decimal-pad"
       />
+
+      {revenda ? (
+        <>
+          <Campo
+            rotulo="Quantidade comprada (opcional)"
+            value={quantidade}
+            onChangeText={setQuantidade}
+            placeholder="12"
+            inputMode="decimal"
+            keyboardType="decimal-pad"
+          />
+          <Campo
+            rotulo="Preço pago por unidade"
+            value={precoPago}
+            onChangeText={setPrecoPago}
+            placeholder="3,20"
+            inputMode="decimal"
+            keyboardType="decimal-pad"
+          />
+          <Txt tipo="rotulo" tom="textoFraco">
+            Isto vira uma compra de verdade: entra no caixa de hoje, soma no estoque e o lucro
+            passa a sair do que você pagou. Deixe a quantidade vazia para cadastrar agora e
+            lançar a nota depois.
+          </Txt>
+        </>
+      ) : (
+        <>
+          <Campo
+            rotulo="Custo estimado (opcional)"
+            value={estimado}
+            onChangeText={setEstimado}
+            placeholder="4,00"
+            inputMode="decimal"
+            keyboardType="decimal-pad"
+          />
+          <Txt tipo="rotulo" tom="textoFraco">
+            Só um palpite, para você já ver a margem. Ele aparece marcado como estimado e some
+            sozinho quando a receita tiver o preço real das suas compras.
+          </Txt>
+        </>
+      )}
+
       <Botao
         desabilitado={!pronto}
-        ocupado={salvar.isPending}
+        ocupado={ocupado}
         onPress={async () => {
           onErro(null);
           try {
-            await salvar.mutateAsync({ nome, preco_venda: numeroDeTexto(preco) });
-            setNome('');
-            setPreco('');
+            if (revenda) {
+              await criarRevenda.mutateAsync({
+                nome,
+                preco_venda: numeroDeTexto(preco),
+                quantidade: numeroDeTexto(quantidade),
+                preco_pago: numeroDeTexto(precoPago),
+              });
+            } else {
+              await salvar.mutateAsync({
+                nome,
+                preco_venda: numeroDeTexto(preco),
+                custo_estimado: numeroDeTexto(estimado),
+              });
+            }
+            limpar();
           } catch (falha) {
             onErro(falha instanceof Error ? falha.message : 'Não consegui cadastrar.');
           }
         }}>
-        Cadastrar produto
+        {revenda ? 'Cadastrar item de revenda' : 'Cadastrar produto'}
       </Botao>
     </Cartao>
   );

@@ -16,6 +16,7 @@ import {
 import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import {
+  custoDoProduto,
   useCancelarVenda,
   useFechamento,
   useProdutos,
@@ -158,6 +159,7 @@ export default function Vender() {
  */
 function BotaoDeVenda({ produto, onPress }: { produto: Produto; onPress: () => void }) {
   const { cores } = useTema();
+  const custo = custoDoProduto(produto);
 
   return (
     <Pressable
@@ -183,12 +185,18 @@ function BotaoDeVenda({ produto, onPress }: { produto: Produto; onPress: () => v
           {dinheiro(produto.preco_venda)}
         </Txt>
       </Linha>
-      {/* Produto sem receita tem custo 0, e aí o "lucro" mostrado é o preço
-          cheio. Melhor dizer que a conta está incompleta do que exibir um
-          número bonito e falso -- é exatamente o erro que o PI quer corrigir. */}
-      {produto.tem_receita ? (
+      {/* Produto sem custo apurado tem custo 0, e aí o "lucro" mostrado seria o
+          preço cheio. Melhor dizer que a conta está incompleta do que exibir um
+          número bonito e falso -- é exatamente o erro que o PI quer corrigir.
+          O palpite dela entra aqui, mas SEMPRE com a palavra "estimado" junto:
+          é o que separa o número que vai pro fechamento do que não vai. */}
+      {custo.tipo === 'apurado' ? (
         <Txt tipo="rotulo" tom="textoFraco">
-          lucro {dinheiro(produto.lucro_unitario)} · custo {dinheiro(produto.custo_unitario)}
+          lucro {dinheiro(custo.lucro)} · custo {dinheiro(custo.custo)}
+        </Txt>
+      ) : custo.tipo === 'estimado' ? (
+        <Txt tipo="rotulo" tom="atencao">
+          estimado: lucro {dinheiro(custo.lucro)} · custo {dinheiro(custo.custo)}
         </Txt>
       ) : (
         <Txt tipo="rotulo" tom="atencao">
