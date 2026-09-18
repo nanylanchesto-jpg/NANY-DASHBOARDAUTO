@@ -50,6 +50,7 @@
     "typecheck": "tsc --noEmit",
     "build:web": "expo export -p web",
     "checa-env": "node scripts/checa-env.mjs",
+    "checa-paleta": "node scripts/checa-contraste.mjs",
     "prestart": "node scripts/checa-env.mjs",
     "prebuild:web": "node scripts/checa-env.mjs"
   },

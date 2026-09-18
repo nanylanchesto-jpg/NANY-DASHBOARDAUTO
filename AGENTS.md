@@ -32,10 +32,19 @@ banco: `compra_itens.quantidade_base` e `.custo_base` são colunas `GENERATED`.
 **Dia civil vem de `public.dia_local()`, nunca de `CURRENT_DATE`.** O servidor
 roda em UTC, onde a venda das 21h30 de sábado já é domingo.
 
-**As cores do gráfico foram calculadas.** Se mexer em `Grafico` no
-`constants/theme.ts`, rode o validador de paleta de novo (luminosidade, croma,
-ΔE com simulação de daltonismo, contraste). Verde + âmbar, que é a escolha
-óbvia, reprova com ΔE 5,6 no protan.
+**A paleta é preto e branco, e isso tem consequência.** Mexeu em `Cores` ou em
+`Grafico` no `constants/theme.ts`, rode `npm run checa-paleta`: ele lê os hex do
+próprio arquivo e cobra 7:1 pra texto contra as TRÊS superfícies em que ele pode
+cair, e 3:1 pra contorno de campo e barra de gráfico. Sem matiz, estado NUNCA
+viaja sozinho -- onde havia cor agora tem símbolo (✓/✕/! no `Aviso`), palavra
+escrita ("prejuízo" ao lado do número) ou textura. E `Grafico.prejuizo` é IGUAL
+a `Grafico.lucro` de propósito: o que separa os dois é a hachura no gráfico de
+dias e a barra vazada em "Por produto". "Arrumar" essa igualdade apaga a única
+distinção que sobrou.
+
+A paleta antiga era de lanchonete (tomate, mostarda, brasa), escolhida porque o
+PI06 registra "abandono do registro diário" como o risco mais alto. Foi trocada
+a pedido da dona do app, não por acidente.
 
 **A `GEMINI_API_KEY` nunca vai pro cliente.** Só `EXPO_PUBLIC_*` entra no
 bundle, e tudo ali é legível no DevTools. Na Edge Function, três detalhes que

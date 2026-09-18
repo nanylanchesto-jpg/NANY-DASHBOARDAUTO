@@ -4,9 +4,11 @@
  * o app do celular podem divergir sem ninguém notar.
  */
 
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -121,6 +123,12 @@ export function Tela({
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
+          // Sem isto, no iOS o teclado sobe POR CIMA do campo que ela acabou de
+          // tocar -- e no login é o botão Entrar que fica escondido. O
+          // `keyboardShouldPersistTaps` acima resolve outra coisa (o primeiro
+          // toque fora do campo valer como toque, e não só como fechar o
+          // teclado); ele não desloca nada.
+          automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}>
           {conteudo}
         </ScrollView>
@@ -201,6 +209,7 @@ export function Botao({
   ocupado,
   desabilitado,
   style,
+  rotuloAcessivel,
 }: {
   children: ReactNode;
   onPress: () => void;
@@ -208,6 +217,15 @@ export function Botao({
   ocupado?: boolean;
   desabilitado?: boolean;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Nome pra leitor de tela quando o conteúdo visível não serve de nome.
+   *
+   * Existe por causa do botão de apagar item de receita, que é só um `✕`: sem
+   * isto o leitor anuncia "✕" e a pessoa não faz ideia do que o botão apaga.
+   * Não havia como corrigir no ponto de uso, porque este componente não
+   * repassava `accessibilityLabel` nenhum.
+   */
+  rotuloAcessivel?: string;
 }) {
   const { cores } = useTema();
   const travado = Boolean(ocupado || desabilitado);
@@ -231,6 +249,7 @@ export function Botao({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={rotuloAcessivel}
       accessibilityState={{ disabled: travado, busy: Boolean(ocupado) }}
       onPress={travado ? undefined : onPress}
       style={({ pressed }) => [
@@ -272,6 +291,15 @@ export function Campo({
       ) : null}
       <TextInput
         placeholderTextColor={cores.textoFraco}
+        // O `rotulo` acima é um <Text> IRMÃO do input: pro olho ele nomeia o
+        // campo, mas pra quem usa leitor de tela os dois não têm relação
+        // nenhuma -- o input é anunciado sem nome. Era o caso dos dois campos
+        // do login. `accessibilityLabel` faz a ligação (vira `aria-label` na
+        // web, o equivalente ao `<label for>` que aqui não existe).
+        //
+        // Antes do spread de propósito: quem precisar de um nome diferente do
+        // rótulo visível passa `accessibilityLabel` e ganha precedência.
+        accessibilityLabel={rotulo}
         {...props}
         style={[
           estilos.campo,
@@ -291,8 +319,16 @@ export function Campo({
 // ---------------------------------------------------------------------------
 
 /**
- * Faixa de recado. Nunca só cor: cada tom vem com um símbolo, porque a faixa
- * verde e a vermelha são a mesma faixa cinza pra quem não distingue as duas.
+ * Faixa de recado. Nunca só cor: cada tom vem com um símbolo, porque com a
+ * paleta em preto e branco a faixa de erro e a de acerto são o mesmo cinza.
+ *
+ * E nunca só visual: a faixa é uma REGIÃO VIVA. Ela aparece por renderização
+ * condicional (`{erro ? <Aviso/> : null}`), então quem não vê a tela não
+ * recebia nada -- digitava a senha errada no login e, do ponto de vista do
+ * leitor de tela, não acontecia absolutamente nada.
+ *
+ * `assertive` só no erro: interrompe o que estiver sendo lido, que é o certo
+ * pra "senha incorreta" e exagerado pra "conta criada".
  */
 export function Aviso({
   children,
@@ -305,9 +341,33 @@ export function Aviso({
   const fundo = { positivo: cores.positivoFraco, negativo: cores.negativoFraco, atencao: cores.atencaoFraco }[tom];
   const simbolo = { positivo: '✓', negativo: '✕', atencao: '!' }[tom];
 
+  // O iOS não implementa `accessibilityLiveRegion` (é Android + web). Lá o
+  // anúncio é imperativo, e só dá pra fazer quando o recado é texto puro --
+  // que é o caso de todas as chamadas hoje.
+  const texto = typeof children === 'string' ? children : null;
+  useEffect(() => {
+    if (texto && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(texto);
+  }, [texto]);
+
   return (
-    <View style={[estilos.aviso, { backgroundColor: fundo, borderColor: cores[tom] }]}>
-      <Text style={{ color: cores[tom], fontSize: Fonte.corpo, fontWeight: '700' }}>
+    <View
+      // `alert` só no negativo: é o papel que carrega urgência. Nos outros a
+      // região viva educada já basta e não atropela a navegação dela.
+      accessibilityRole={tom === 'negativo' ? 'alert' : undefined}
+      accessibilityLiveRegion={tom === 'negativo' ? 'assertive' : 'polite'}
+      style={[estilos.aviso, { backgroundColor: fundo, borderColor: cores[tom] }]}>
+      <Text
+        // O símbolo é decoração: quem enxerga usa ele pra distinguir as faixas
+        // sem depender de cor, mas lido em voz alta ele vira "letra xis" antes
+        // da mensagem, que só atrapalha.
+        //
+        // As três props porque cada plataforma entende a sua, e conferi no DOM:
+        // `accessibilityElementsHidden` sozinho (iOS) NÃO vira `aria-hidden` no
+        // react-native-web -- o símbolo continuava sendo lido.
+        aria-hidden
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ color: cores[tom], fontSize: Fonte.corpo, fontWeight: '700' }}>
         {simbolo}
       </Text>
       <View style={{ flex: 1 }}>
@@ -353,6 +413,12 @@ const estilos = StyleSheet.create({
   colunaMax: {
     width: '100%',
     maxWidth: LarguraMax,
+    // `flexGrow` e não `flex: 1`: sem isto a coluna encolhe pra altura do
+    // conteúdo e todo `justifyContent: 'center'` de quem está dentro não tem o
+    // que preencher -- era por isso que o login ficava grudado no topo. `flex:
+    // 1` traria `flexBasis: 0` junto e espremeria as telas que passam da
+    // altura do aparelho.
+    flexGrow: 1,
   },
   faixaCarregando: {
     height: 3,

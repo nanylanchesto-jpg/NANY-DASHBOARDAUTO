@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build:web",
+  "outputDirectory": "dist",
+  "framework": null,
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [{ "source": "/(.*)", "destination": "/+not-found" }],
+  "headers": [
+    {
+      "source": "/_expo/static/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*).html",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}

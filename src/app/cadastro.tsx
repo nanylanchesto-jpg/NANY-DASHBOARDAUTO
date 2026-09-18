@@ -13,7 +13,7 @@ import {
   Txt,
   Vazio,
 } from '@/components/ui';
-import { Espaco, Raio } from '@/constants/theme';
+import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import {
   useApagarItemReceita,
@@ -82,6 +82,8 @@ export default function Cadastro() {
           <NovoProduto onErro={setErro} />
         </View>
       )}
+
+      
 
       <Titulo>Ingredientes</Titulo>
       {ingredientes.isLoading ? (
@@ -169,7 +171,13 @@ function CartaoProduto({
 
   return (
     <Cartao style={{ gap: Espaco.md }}>
-      <Pressable onPress={onAlternar} accessibilityRole="button">
+      {/* `expanded` porque isto é um expansor, não um botão comum: sem o
+          estado, o leitor de tela anuncia a mesma coisa com a receita aberta e
+          fechada, e a seta ▲/▼ que diz isso pro olho não é lida. */}
+      <Pressable
+        onPress={onAlternar}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: aberto }}>
         <Linha entre>
           <View style={{ flex: 1 }}>
             <Txt tipo="titulo" negrito numberOfLines={1}>
@@ -324,7 +332,14 @@ function EditorDeReceita({
                 </View>
                 <Botao
                   variante="perigo"
-                  style={{ minHeight: 40, paddingHorizontal: Espaco.sm }}
+                  rotuloAcessivel={`Remover ${ing?.nome ?? 'ingrediente'} da receita de ${produto.nome}`}
+                  // Era 40 px de altura por ~25 de largura: o menor alvo do
+                  // app inteiro, sem rótulo, e apaga item de receita.
+                  style={{
+                    minHeight: Touch.alvoSecundario,
+                    minWidth: Touch.alvoSecundario,
+                    paddingHorizontal: Espaco.sm,
+                  }}
                   onPress={async () => {
                     onErro(null);
                     try {
@@ -515,7 +530,7 @@ function Ficha({
       accessibilityState={{ selected: ativo }}
       onPress={onPress}
       style={({ pressed }) => ({
-        minHeight: 44,
+        minHeight: Touch.alvoSecundario,
         paddingHorizontal: Espaco.md,
         justifyContent: 'center',
         borderRadius: Raio.pill,

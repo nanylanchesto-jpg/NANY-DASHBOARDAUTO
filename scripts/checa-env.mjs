@@ -58,6 +58,16 @@ function ler(caminho) {
 // Checa todo .env que o Expo carrega, não só o principal.
 const ARQUIVOS = ['.env', '.env.local', '.env.development', '.env.production'];
 const problemas = [];
+const vistos = new Set();
+
+function examinar(origem, nome, valor) {
+  if (!nome.startsWith('EXPO_PUBLIC_')) return; // sem prefixo, nao vai pro bundle
+  if (vistos.has(nome)) return; // mesma variavel em dois lugares: um aviso basta
+  vistos.add(nome);
+
+  const motivo = motivoDeRisco(valor);
+  if (motivo) problemas.push({ origem, nome, motivo });
+}
 
 for (const arquivo of ARQUIVOS) {
   const conteudo = ler(arquivo);
@@ -70,20 +80,26 @@ for (const arquivo of ARQUIVOS) {
     const divisor = texto.indexOf('=');
     if (divisor < 1) return;
 
-    const nome = texto.slice(0, divisor).trim();
-    if (!nome.startsWith('EXPO_PUBLIC_')) return; // sem prefixo, nao vai pro bundle
-
-    const motivo = motivoDeRisco(texto.slice(divisor + 1));
-    if (motivo) {
-      problemas.push({ arquivo, linha: indice + 1, nome, motivo });
-    }
+    examinar(`${arquivo}:${indice + 1}`, texto.slice(0, divisor).trim(), texto.slice(divisor + 1));
   });
+}
+
+// E TAMBEM o ambiente, que e onde a build de producao vive.
+//
+// A trava nasceu olhando so arquivo, porque foi escrita pra quem roda o build
+// na propria maquina. Na Vercel (e em qualquer CI) nao existe arquivo .env
+// nenhum: as variaveis chegam pelo painel, direto em `process.env`. Uma
+// EXPO_PUBLIC_GEMINI_API_KEY cadastrada la passaria inteira pro bundle sem esta
+// trava piscar -- e e justamente o lugar mais dificil de revisar, porque nao
+// aparece em diff nenhum.
+for (const [nome, valor] of Object.entries(process.env)) {
+  examinar('ambiente (painel da Vercel, CI, ou export no shell)', nome, valor ?? '');
 }
 
 if (problemas.length > 0) {
   console.error('\n  BUILD INTERROMPIDO: segredo na rota do bundle\n');
   for (const p of problemas) {
-    console.error(`  ${p.arquivo}:${p.linha}  ${p.nome}`);
+    console.error(`  ${p.origem}  ${p.nome}`);
     console.error(`      ${p.motivo}\n`);
   }
   console.error('  Tudo com prefixo EXPO_PUBLIC_ e embutido no JavaScript que o');
@@ -97,13 +113,22 @@ if (problemas.length > 0) {
 
 // Silencioso quando esta tudo bem: aviso que sempre aparece e aviso que
 // ninguem le. So fala se o app nao vai conseguir subir.
+//
+// Vale o ARQUIVO ou o AMBIENTE, nesta ordem de busca mas com peso igual. So
+// olhar o arquivo dava um build que passa na maquina e quebra na Vercel, onde
+// .env nao existe e as duas variaveis chegam por `process.env` -- e quebra
+// dizendo ".env incompleto", que manda procurar no lugar errado.
 const principal = ler('.env') ?? '';
+const temNoArquivo = (nome) => new RegExp(`^${nome}=.+`, 'm').test(principal);
+const temNoAmbiente = (nome) => Boolean(process.env[nome]?.trim());
+
 const faltando = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY'].filter(
-  (nome) => !new RegExp(`^${nome}=.+`, 'm').test(principal),
+  (nome) => !temNoArquivo(nome) && !temNoAmbiente(nome),
 );
 
 if (faltando.length > 0) {
-  console.error(`\n  .env incompleto: falta ${faltando.join(' e ')}`);
-  console.error('  Copie de .env.example e preencha com Settings > API do seu projeto.\n');
+  console.error(`\n  Falta ${faltando.join(' e ')}.`);
+  console.error('  Local: copie de .env.example e preencha com Settings > API do seu projeto.');
+  console.error('  Vercel: Settings > Environment Variables, no mesmo nome.\n');
   process.exit(1);
 }

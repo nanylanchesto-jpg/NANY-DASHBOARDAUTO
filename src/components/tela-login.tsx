@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { Espaco } from '@/constants/theme';
 import { criarConta, entrar } from '@/lib/sessao';
 
-import { Aviso, Botao, Campo, Cartao, Txt, Tela } from './ui';
+import { Aviso, Botao, Campo, Txt, Tela } from './ui';
 
 export function TelaLogin() {
   const [modo, setModo] = useState<'entrar' | 'criar'>('entrar');
@@ -53,7 +53,7 @@ export function TelaLogin() {
 
   return (
     <Tela>
-      <View style={{ flex: 1, justifyContent: 'center', gap: Espaco.lg, paddingVertical: Espaco.xxl }}>
+      <View style={{ flex: 1, justifyContent: 'center', gap: Espaco.xl, paddingVertical: Espaco.xxl }}>
         <View style={{ gap: Espaco.xs }}>
           <Txt tipo="numero">Nany Lanches</Txt>
           <Txt tipo="corpo" tom="textoFraco">
@@ -61,7 +61,9 @@ export function TelaLogin() {
           </Txt>
         </View>
 
-        <Cartao style={{ gap: Espaco.md }}>
+        {/* Sem `Cartao`: a tela já é só o formulário, e a moldura em volta dele
+            era uma caixa dentro de outra caixa sem separar nada. */}
+        <View style={{ gap: Espaco.md }}>
           <Campo
             rotulo="E-mail"
             value={email}
@@ -90,17 +92,20 @@ export function TelaLogin() {
           <Botao onPress={enviar} ocupado={ocupado}>
             {criando ? 'Criar conta' : 'Entrar'}
           </Botao>
+        </View>
 
-          <Botao
-            variante="fantasma"
-            onPress={() => {
-              setModo(criando ? 'entrar' : 'criar');
-              setErro(null);
-              setRecado(null);
-            }}>
-            {criando ? 'Já tenho conta' : 'Criar uma conta'}
-          </Botao>
-        </Cartao>
+        {/* Fora do grupo do formulário de propósito: colado no botão de enviar,
+            os dois pareciam a mesma decisão. O alvo de toque segue sendo o do
+            `Botao` — trocar por texto tocável encolheria pra menos que 56 px. */}
+        <Botao
+          variante="fantasma"
+          onPress={() => {
+            setModo(criando ? 'entrar' : 'criar');
+            setErro(null);
+            setRecado(null);
+          }}>
+          {criando ? 'Já tenho conta' : 'Criar uma conta'}
+        </Botao>
       </View>
     </Tela>
   );

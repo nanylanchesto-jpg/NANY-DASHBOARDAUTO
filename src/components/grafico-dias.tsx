@@ -4,21 +4,26 @@
  * FORMA: barra empilhada, não duas linhas nem eixo duplo. Custo e lucro são
  * PARTES da receita (custo + lucro = receita), e empilhar é o que mostra as
  * duas coisas que ela quer saber de uma olhada: o tamanho do dia (altura da
- * barra) e quanto daquilo sobrou pra ela (o pedaço verde). Duas séries lado a
- * lado mostrariam os mesmos números perdendo a relação entre eles.
+ * barra) e quanto daquilo sobrou pra ela (o pedaço escuro no topo). Duas
+ * séries lado a lado mostrariam os mesmos números perdendo a relação entre
+ * eles.
  *
  * Tudo em reais, um eixo só. Gráfico de dois eixos y é a pior armadilha de
  * dataviz -- dá pra fazer qualquer série parecer que acompanha qualquer outra
  * só escolhendo as escalas.
  *
  * DIA DE PREJUÍZO quebra o empilhamento: não existe "parte negativa" de uma
- * soma. Nesses dias a barra inteira vira a cor de prejuízo e o dia entra na
- * legenda com rótulo escrito -- status nunca viaja só na cor.
+ * soma. Nesses dias a barra inteira vira o estado.
+ *
+ * Com a paleta em preto e branco, esse terceiro estado NÃO é um terceiro
+ * cinza: é hachura diagonal, na mesma tinta do lucro, com contorno. Um cinza
+ * intermediário entre custo e lucro é exatamente o que não se distingue numa
+ * barra estreita vista de lado. Ver `Grafico` em `constants/theme`.
  */
 
 import { Fragment, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, Line, Path, Pattern, Rect, Text as SvgText } from 'react-native-svg';
 
 import { Espaco, Raio } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
@@ -29,10 +34,26 @@ import { Cartao, Linha, Txt } from './ui';
 
 const ALTURA = 150;
 const RAIO_PONTA = 4;
-/** Fundo aparecendo entre custo e lucro, pra separar os dois sem depender da cor. */
+/** Fundo aparecendo entre custo e lucro, pra separar os dois sem depender da tinta. */
 const FOLGA = 2;
 /** Mais que isso e os rótulos de dia se atropelam num celular estreito. */
 const MAX_ROTULOS = 7;
+/** Lado do ladrilho da hachura. O traço ocupa ~44% dele: listra, não cinza. */
+const LADRILHO = 8;
+const TRACO = 2.5;
+/** Lado do quadradinho da legenda, dos dois tipos, pra alinharem. */
+const CHAVE = 12;
+
+/**
+ * Hachura a 45° que ladrilha sem emenda: a diagonal principal mais os dois
+ * pedaços de canto. Desenhada assim, e não com `patternTransform="rotate(45)"`,
+ * porque a rotação de padrão não se comporta igual nas três plataformas.
+ */
+const HACHURA = [
+  'M -2 2 L 2 -2',
+  `M 0 ${LADRILHO} L ${LADRILHO} 0`,
+  `M ${LADRILHO - 2} ${LADRILHO + 2} L ${LADRILHO + 2} ${LADRILHO - 2}`,
+].join(' ');
 
 /** Retângulo com só as duas pontas de cima arredondadas — a ponta dos dados. */
 function caminhoPonta(x: number, y: number, largura: number, altura: number) {
@@ -73,11 +94,11 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
   return (
     <Cartao>
       {/* Legenda sempre presente: com duas séries, a identidade nunca pode
-          depender só da cor. */}
+          depender só da tinta. */}
       <Linha style={{ flexWrap: 'wrap', marginBottom: Espaco.md }}>
         <Chave cor={grafico.lucro} rotulo="Lucro" />
         <Chave cor={grafico.custo} rotulo="Custo" />
-        {temPrejuizo ? <Chave cor={grafico.prejuizo} rotulo="Dia no prejuízo" /> : null}
+        {temPrejuizo ? <Chave cor={grafico.prejuizo} rotulo="Dia no prejuízo" textura /> : null}
       </Linha>
 
       {/* O painel do dia tocado, que no celular faz o papel do tooltip. Fica
@@ -93,8 +114,10 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
               <Txt tipo="corpo" negrito>
                 {dinheiro(foco.receita)}
               </Txt>
+              {/* "lucro" / "prejuízo" escrito: sem matiz, a palavra é o que diz
+                  de que lado o número está. */}
               <Txt tipo="rotulo" tom={foco.lucro_vendas < 0 ? 'negativo' : 'positivo'}>
-                lucro {dinheiro(foco.lucro_vendas)}
+                {foco.lucro_vendas < 0 ? 'prejuízo' : 'lucro'} {dinheiro(foco.lucro_vendas)}
               </Txt>
               <Txt tipo="rotulo" tom="textoFraco">
                 custo {dinheiro(foco.custo_vendido)}
@@ -112,6 +135,19 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
         {largura > 0 ? (
           <>
             <Svg width={largura} height={ALTURA + 4}>
+              <Defs>
+                <Pattern
+                  id="hachura"
+                  width={LADRILHO}
+                  height={LADRILHO}
+                  patternUnits="userSpaceOnUse">
+                  {/* O vão entre os traços é a superfície do cartão, não
+                      transparência: por baixo da barra passa a linha da base. */}
+                  <Rect width={LADRILHO} height={LADRILHO} fill={cores.superficie} />
+                  <Path d={HACHURA} stroke={grafico.prejuizo} strokeWidth={TRACO} />
+                </Pattern>
+              </Defs>
+
               {/* Base recessiva: referência, não informação. */}
               <Line
                 x1={0}
@@ -143,12 +179,16 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
                 ) : null;
 
                 // Prejuízo: sem empilhamento possível, a barra toda é o estado.
+                // Hachura MAIS contorno: a hachura sozinha deixa a silhueta da
+                // barra indefinida contra a superfície do cartão.
                 if (dia.lucro_vendas < 0) {
                   return (
                     <Fragment key={dia.dia}>
                       <Path
                         d={caminhoPonta(x, ALTURA - alturaTotal, larguraBarra, alturaTotal)}
-                        fill={grafico.prejuizo}
+                        fill="url(#hachura)"
+                        stroke={grafico.prejuizo}
+                        strokeWidth={1}
                       />
                       {anel}
                     </Fragment>
@@ -211,7 +251,7 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
                   accessibilityRole="button"
                   accessibilityLabel={`${diaDaSemana(dia.dia)} ${diaMes(dia.dia)}: receita ${dinheiro(
                     dia.receita,
-                  )}, lucro ${dinheiro(dia.lucro_vendas)}`}
+                  )}, ${dia.lucro_vendas < 0 ? 'prejuízo' : 'lucro'} ${dinheiro(dia.lucro_vendas)}`}
                   onPress={() => setSelecionado(indice === selecionado ? null : indice)}
                   style={{ width: passo, height: ALTURA }}
                 />
@@ -228,12 +268,38 @@ export function GraficoDias({ dias }: { dias: DiaResumo[] }) {
   );
 }
 
-function Chave({ cor, rotulo }: { cor: string; rotulo: string }) {
+function Chave({ cor, rotulo, textura }: { cor: string; rotulo: string; textura?: boolean }) {
+  const { cores } = useTema();
   return (
     <Linha style={{ gap: Espaco.xs }}>
-      <View style={{ width: 10, height: 10, borderRadius: Raio.sm / 2, backgroundColor: cor }} />
-      {/* O texto usa tom de tinta, nunca a cor da série: a bolinha ao lado já
-          carrega a identidade. */}
+      {textura ? (
+        <Svg width={CHAVE} height={CHAVE}>
+          <Defs>
+            <Pattern
+              id="hachura-chave"
+              width={LADRILHO}
+              height={LADRILHO}
+              patternUnits="userSpaceOnUse">
+              <Rect width={LADRILHO} height={LADRILHO} fill={cores.superficie} />
+              <Path d={HACHURA} stroke={cor} strokeWidth={TRACO} />
+            </Pattern>
+          </Defs>
+          <Rect
+            width={CHAVE}
+            height={CHAVE}
+            rx={Raio.sm / 2}
+            fill="url(#hachura-chave)"
+            stroke={cor}
+            strokeWidth={1}
+          />
+        </Svg>
+      ) : (
+        <View
+          style={{ width: CHAVE, height: CHAVE, borderRadius: Raio.sm / 2, backgroundColor: cor }}
+        />
+      )}
+      {/* O texto usa tom de tinta, nunca a tinta da série: o quadradinho ao lado
+          já carrega a identidade. */}
       <Txt tipo="rotulo" tom="textoFraco">
         {rotulo}
       </Txt>

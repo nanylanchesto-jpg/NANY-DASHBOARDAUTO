@@ -130,7 +130,7 @@ export default function Vender() {
                 </View>
                 <Botao
                   variante="perigo"
-                  style={{ minHeight: 44, paddingHorizontal: Espaco.md }}
+                  style={{ minHeight: Touch.alvoSecundario, paddingHorizontal: Espaco.md }}
                   ocupado={cancelar.isPending && cancelar.variables === venda.id}
                   onPress={async () => {
                     setErro(null);

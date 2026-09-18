@@ -13,7 +13,7 @@ import {
   Txt,
   Vazio,
 } from '@/components/ui';
-import { Espaco, Raio } from '@/constants/theme';
+import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import { useFechamento, useParaComprar, useResumoPorDia, useVendasPorProduto } from '@/lib/dados';
 import { dinheiro, dinheiroCurto, inteiro, quantidade, saldo } from '@/lib/formato';
@@ -36,7 +36,18 @@ export default function Dashboard() {
     <Tela atualizando={hoje.isFetching || serie.isFetching}>
       <Titulo
         acao={
-          <Botao variante="fantasma" onPress={sair} style={{ minHeight: 0, paddingHorizontal: 0 }}>
+          // `minHeight: 0` deixava o alvo do tamanho da letra (~18 px). Alvo
+          // secundário, com a margem negativa segurando a altura visual da
+          // linha do título -- o dedo ganha os 44 px, o olho não vê diferença.
+          <Botao
+            variante="fantasma"
+            onPress={sair}
+            style={{
+              minHeight: Touch.alvoSecundario,
+              paddingHorizontal: Espaco.sm,
+              marginVertical: -Espaco.md,
+              marginRight: -Espaco.sm,
+            }}>
             Sair
           </Botao>
         }>
@@ -179,7 +190,10 @@ function SeletorDeJanela({
             accessibilityState={{ selected: ativo }}
             onPress={() => onMudar(dias)}
             style={{
-              paddingVertical: Espaco.sm,
+              // Eram ~32 px de altura: é a troca de período do gráfico, ela
+              // usa de verdade, e não é destrutiva.
+              minHeight: Touch.alvoSecundario,
+              justifyContent: 'center',
               paddingHorizontal: Espaco.md,
               borderRadius: Raio.pill,
               borderWidth: 1,
@@ -242,12 +256,19 @@ function PorProduto({
                 overflow: 'hidden',
                 backgroundColor: 'transparent',
               }}>
+              {/* Em preto e branco `prejuizo` e `lucro` são a MESMA tinta (ver
+                  `Grafico` em constants/theme), então aqui o que separa é a
+                  barra vazada com contorno -- o mesmo papel que a hachura faz
+                  no gráfico de dias. Pintar as duas de sólido deixaria um
+                  produto no prejuízo idêntico a um no lucro. */}
               <View
                 style={{
                   height: '100%',
                   width: `${Math.max(2, (Math.abs(linha.lucro) / teto) * 100)}%`,
                   borderRadius: Raio.sm,
-                  backgroundColor: negativo ? grafico.prejuizo : grafico.lucro,
+                  backgroundColor: negativo ? 'transparent' : grafico.lucro,
+                  borderWidth: negativo ? 1.5 : 0,
+                  borderColor: grafico.prejuizo,
                 }}
               />
             </View>

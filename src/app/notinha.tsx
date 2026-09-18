@@ -13,7 +13,7 @@ import {
   Txt,
   Vazio,
 } from '@/components/ui';
-import { Espaco, Raio } from '@/constants/theme';
+import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import { useCancelarCompra, useHistoricoCompras, useSalvarCompra } from '@/lib/dados';
 import { diaMes, dinheiro, numeroDeTexto } from '@/lib/formato';
@@ -275,7 +275,7 @@ export default function Notinha() {
               </View>
               <Botao
                 variante="perigo"
-                style={{ minHeight: 44, paddingHorizontal: Espaco.md }}
+                style={{ minHeight: Touch.alvoSecundario, paddingHorizontal: Espaco.md }}
                 ocupado={cancelar.isPending && cancelar.variables === compra.id}
                 onPress={async () => {
                   setErro(null);
@@ -340,7 +340,7 @@ function LinhaDeItem({
         </Txt>
       </Linha>
 
-      <Botao variante="perigo" style={{ minHeight: 44 }} onPress={onRemover}>
+      <Botao variante="perigo" style={{ minHeight: Touch.alvoSecundario }} onPress={onRemover}>
         Remover item
       </Botao>
     </Cartao>

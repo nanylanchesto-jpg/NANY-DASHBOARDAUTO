@@ -70,42 +70,59 @@ function Portao() {
   );
 }
 
+/**
+ * O `<TabList>` tem que ser filho DIRETO de `<Tabs>`.
+ *
+ * `Tabs` não renderiza os filhos pra descobrir as abas: ele percorre o JSX e
+ * compara `child.type === TabList` (`parseTriggersFromChildren`, em
+ * `expo-router/build/ui/Tabs.js`). Extrair a barra pra um componente próprio --
+ * que é a limpeza óbvia, e era como estava -- esconde os `TabTrigger` desse
+ * percurso: o navegador fica com zero telas e o app quebra com "Couldn't find
+ * any screens for the navigator" na hora em que ela entra.
+ *
+ * O `npm run build:web` NÃO pega isso. No export estático a sessão ainda está
+ * carregando, o `Portao` devolve a tela vazia, e as abas nunca chegam a montar.
+ */
 function Abas() {
-  return (
-    <Tabs>
-      <TabSlot />
-      <BarraDeAbas />
-    </Tabs>
-  );
-}
-
-function BarraDeAbas() {
   const { cores } = useTema();
   const inset = useSafeAreaInsets();
 
   return (
-    <TabList
-      style={[
-        estilos.barra,
-        {
-          backgroundColor: cores.superficie,
-          borderTopColor: cores.borda,
-          paddingBottom: Math.max(inset.bottom, Espaco.sm),
-        },
-      ]}>
-      <TabTrigger name="hoje" href="/" asChild>
-        <ItemDeAba icone="◆" rotulo="Hoje" />
-      </TabTrigger>
-      <TabTrigger name="vender" href="/vender" asChild>
-        <ItemDeAba icone="＋" rotulo="Vender" />
-      </TabTrigger>
-      <TabTrigger name="notinha" href="/notinha" asChild>
-        <ItemDeAba icone="▣" rotulo="Notinha" />
-      </TabTrigger>
-      <TabTrigger name="cadastro" href="/cadastro" asChild>
-        <ItemDeAba icone="☰" rotulo="Cadastro" />
-      </TabTrigger>
-    </TabList>
+    <Tabs>
+      {/* `minHeight: 0` + `flexShrink: 1` sobrescrevem o `flexShrink: 0` que o
+          próprio TabSlot põe no contêiner das telas e na tela focada. Sem isso,
+          tela mais alta que o visor não encolhe: a coluna transborda e a
+          `TabList`, que vem DEPOIS dela, é empurrada pra fora da área visível --
+          no Cadastro, que é a tela mais longa, a barra de navegação sumia e não
+          tinha como trocar de aba.
+
+          Só acontece na web: no app nativo o react-native-screens recorta o
+          contêiner, e aí o `flexShrink: 0` não faz diferença. Como este é o
+          mesmo bundle nos dois lugares, o bug existia só de um lado. */}
+      <TabSlot style={{ minHeight: 0, flexShrink: 1 }} />
+      <TabList
+        style={[
+          estilos.barra,
+          {
+            backgroundColor: cores.superficie,
+            borderTopColor: cores.borda,
+            paddingBottom: Math.max(inset.bottom, Espaco.sm),
+          },
+        ]}>
+        <TabTrigger name="hoje" href="/" asChild>
+          <ItemDeAba icone="◆" rotulo="Hoje" />
+        </TabTrigger>
+        <TabTrigger name="vender" href="/vender" asChild>
+          <ItemDeAba icone="＋" rotulo="Vender" />
+        </TabTrigger>
+        <TabTrigger name="notinha" href="/notinha" asChild>
+          <ItemDeAba icone="▣" rotulo="Notinha" />
+        </TabTrigger>
+        <TabTrigger name="cadastro" href="/cadastro" asChild>
+          <ItemDeAba icone="☰" rotulo="Cadastro" />
+        </TabTrigger>
+      </TabList>
+    </Tabs>
   );
 }
 
@@ -127,7 +144,18 @@ const ItemDeAba = forwardRef<
       accessibilityRole="tab"
       accessibilityState={{ selected: Boolean(isFocused) }}
       style={({ pressed }) => [estilos.item, { opacity: pressed ? 0.6 : 1 }]}>
-      <Text style={{ fontSize: 20, color: cor, lineHeight: 24 }}>{icone}</Text>
+      {/* Sem `lineHeight` fixo: o React Native escala `fontSize` com a fonte do
+          sistema mas NÃO escala `lineHeight`, então um `lineHeight: 24` cravado
+          cortava o glifo assim que alguém aumentava a fonte do aparelho -- e
+          quem trabalha em balcão é justamente quem costuma aumentar. O ícone é
+          decorativo: o rótulo escrito abaixo é que nomeia a aba. */}
+      <Text
+        aria-hidden
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ fontSize: 20, color: cor }}>
+        {icone}
+      </Text>
       {/* O rótulo escrito fica sempre visível, nunca só o ícone: são quatro
           telas que ela vai aprender uma vez, e "▣" não quer dizer nada sozinho. */}
       <Text style={{ fontSize: 11, color: cor, fontWeight: isFocused ? '700' : '400' }}>
