@@ -44,7 +44,7 @@ export type Produto = {
 /**
  * Qual custo a tela mostra, e de que natureza ele é.
  *
- * Um lugar só porque a regra tem que ser a MESMA em Cadastro, Vender e Hoje: um
+ * Um lugar só porque a regra tem que ser a MESMA em Produtos, Hoje e Lucro: um
  * número com cara de apurado numa tela e de palpite na outra é pior que não ter
  * o palpite. E a ordem importa -- o apurado sempre ganha do estimado, senão o
  * palpite velho continuaria na tela depois da primeira nota lançada, que é
@@ -72,17 +72,33 @@ export function custoDoProduto(produto: Produto): CustoDoProduto {
   return { tipo: 'ausente' };
 }
 
+/** Os valores do CHECK de `vendas.pagamento`. */
+export type Pagamento = 'dinheiro' | 'pix' | 'cartao';
+
+/** Os valores do CHECK de `metas.periodo`. */
+export type Periodo = 'dia' | 'semana' | 'mes';
+
 export type Fechamento = {
   dia: string;
   receita: number;
   custo_vendido: number;
-  /** Receita menos o custo dos ingredientes das vendas do dia: a margem. */
+  /** Receita menos o custo dos ingredientes das vendas do dia: a margem. Não desconta despesa. */
   lucro_vendas: number;
   compras: number;
-  /** Entrou de venda menos o que ela pagou de compra no dia: dinheiro. */
+  /** Gasto que não é ingrediente (gás, embalagem, transporte, taxa). */
+  despesas: number;
+  /** Entrou de venda menos compras e despesas do dia: dinheiro. */
   caixa: number;
   unidades: number;
+  /** Pedidos, não linhas: 2 hot-dogs + 1 suco contam 1. */
   atendimentos: number;
+  /**
+   * Receita por forma. Venda de antes do pedido não tem forma e não entra em
+   * nenhuma, então as três podem somar menos que `receita`.
+   */
+  em_dinheiro: number;
+  em_pix: number;
+  em_cartao: number;
 };
 
 export type DiaResumo = {
@@ -91,7 +107,9 @@ export type DiaResumo = {
   custo_vendido: number;
   lucro_vendas: number;
   compras: number;
+  despesas: number;
   unidades: number;
+  atendimentos: number;
 };
 
 export type ProdutoVendas = {
@@ -122,17 +140,35 @@ export type CompraResumo = {
   itens: number;
 };
 
-export type VendaLinha = {
+/** Uma linha de `vendas_do_dia`. Um pedido de 2 produtos são 2 linhas com o mesmo `pedido`. */
+export type VendaDoDia = {
   id: string;
+  /** null = venda de antes do pedido: desfaz por `useCancelarVenda(id)`. */
+  pedido: string | null;
   produto_id: string;
+  /** Nome atual do produto (preço e lucro, esses sim, são da hora da venda). */
+  nome: string;
   quantidade: number;
   preco_unitario: number;
-  custo_unitario: number;
   total: number;
   lucro: number;
+  /** null = venda de antes do campo existir. Não é "dinheiro". */
+  pagamento: Pagamento | null;
   vendida_em: string;
+  /** Vem preenchido nas desfeitas: quem esconde é a tela. */
   cancelada_em: string | null;
-  produtos: { nome: string } | null;
+};
+
+/** Meta de VENDAS (receita) em R$, uma por período. */
+export type Meta = { periodo: Periodo; valor: number };
+
+export type Despesa = {
+  id: string;
+  descricao: string;
+  valor: number;
+  /** "YYYY-MM-DD": o dia do gasto, que pode ser anterior ao lançamento. */
+  dia: string;
+  created_at: string;
 };
 
 export type ItemReceita = {
@@ -155,16 +191,19 @@ export const chaves = {
   ingredientes: ['ingredientes'] as const,
   receita: (produtoId: string) => ['receita', produtoId] as const,
   compras: ['compras'] as const,
-  vendasDoDia: ['vendas-do-dia'] as const,
+  vendasDoDia: (dia?: string) => ['vendas-do-dia', dia ?? 'hoje'] as const,
+  metas: ['metas'] as const,
+  despesas: ['despesas'] as const,
 };
 
 /**
- * Tudo que uma venda ou uma compra muda de uma vez.
+ * Tudo que uma venda, uma compra ou uma despesa muda de uma vez.
  *
  * Existe como lista única porque o custo de esquecer um item é invisível: a
  * tela simplesmente mostra o número velho, sem erro nenhum, e ela conclui que
  * o registro não funcionou. Venda mexe em estoque (baixa da receita), que mexe
- * no custo do produto, que mexe no lucro -- praticamente tudo se toca.
+ * no custo do produto, que mexe no lucro -- praticamente tudo se toca. Despesa
+ * mexe no caixa do fechamento e da série.
  */
 function invalidarMovimento(qc: QueryClient) {
   const raizes = [
@@ -176,6 +215,7 @@ function invalidarMovimento(qc: QueryClient) {
     'ingredientes',
     'compras',
     'vendas-do-dia',
+    'despesas',
   ];
   return Promise.all(raizes.map((raiz) => qc.invalidateQueries({ queryKey: [raiz] })));
 }
@@ -452,57 +492,180 @@ export function useApagarItemReceita() {
 // Vendas
 // ---------------------------------------------------------------------------
 
-export function useVendasDoDia() {
+/**
+ * As vendas de um dia civil, linha a linha, canceladas inclusive.
+ *
+ * Sem `dia`, é o hoje do SERVIDOR (`dia_local()`), não o do celular: a lista
+ * tem que fechar no mesmo dia que `fechamento_do_dia` soma, senão a venda das
+ * 21h30 de sábado aparece numa e falta na outra.
+ */
+export function useVendasDoDia(dia?: string) {
   return useQuery({
-    queryKey: chaves.vendasDoDia,
+    queryKey: chaves.vendasDoDia(dia),
+    queryFn: () => rpc<VendaDoDia[]>('vendas_do_dia', { _dia: dia ?? null }),
+  });
+}
+
+/**
+ * Um pedido inteiro (2 hot-dogs + 1 suco, no Pix) numa chamada só. Devolve o
+ * uuid do pedido, que é o que `useCancelarPedido` desfaz.
+ *
+ * RPC e não um INSERT por produto: no 3G da rua, a conexão que cai no meio
+ * deixaria meio pedido gravado, com o estoque da metade já baixado. O preço
+ * não vai daqui -- o banco usa o de tabela e fotografa o custo (`fecha_venda`),
+ * então um cache velho de produtos no celular não grava preço antigo.
+ */
+export function useRegistrarPedido() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      itens,
+      pagamento,
+    }: {
+      itens: { produto: Produto; quantidade: number }[];
+      pagamento: Pagamento;
+    }) =>
+      rpc<string>('registrar_pedido', {
+        _itens: itens.map(({ produto, quantidade }) => ({ produto_id: produto.id, quantidade })),
+        _pagamento: pagamento,
+      }),
+    onSuccess: () => invalidarMovimento(qc),
+  });
+}
+
+/** Desfaz o pedido inteiro. Devolve quantas linhas cancelou: 0 = já estava desfeito. */
+export function useCancelarPedido() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pedido: string) => rpc<number>('cancelar_pedido', { _pedido: pedido }),
+    onSuccess: () => invalidarMovimento(qc),
+  });
+}
+
+/** Desfaz UMA linha. É o caminho das vendas de antes do pedido (`pedido` null). */
+export function useCancelarVenda() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => rpc<boolean>('cancelar_venda', { _venda_id: id }),
+    onSuccess: () => invalidarMovimento(qc),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Metas
+// ---------------------------------------------------------------------------
+
+export function useMetas() {
+  return useQuery({
+    queryKey: chaves.metas,
     queryFn: async () => {
-      // Recorte de 24h em vez do dia civil: o filtro por dia local precisaria
-      // de RPC própria, e pra lista de "desfazer a última" o que importa é o
-      // que acabou de acontecer. O número do dia vem de `fechamento_do_dia`,
-      // que fecha no fuso certo.
-      const desde = new Date(Date.now() - 86_400_000).toISOString();
-      const { data, error } = await supabase
-        .from('vendas')
-        .select(
-          'id, produto_id, quantidade, preco_unitario, custo_unitario, total, lucro, vendida_em, cancelada_em, produtos(nome)',
-        )
-        .gte('vendida_em', desde)
-        .order('vendida_em', { ascending: false })
-        .limit(50);
+      const { data, error } = await supabase.from('metas').select('periodo, valor');
       if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as VendaLinha[];
+      return (data ?? []) as Meta[];
     },
   });
 }
 
-export function useRegistrarVenda() {
+/** Define ou troca a meta do período: é upsert, porque só existe uma por período. */
+export function useSalvarMeta() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ produto, quantidade = 1 }: { produto: Produto; quantidade?: number }) => {
+    mutationFn: async ({ periodo, valor }: Meta) => {
+      const { error } = await supabase
+        .from('metas')
+        // Sem `onConflict`, definir a meta do dia pela segunda vez daria erro
+        // de chave duplicada em vez de trocar o valor.
+        .upsert({ user_id: await donaAtual(), periodo, valor }, { onConflict: 'user_id,periodo' });
+      if (error) {
+        if (error.code === '23514') throw new Error('A meta precisa ser maior que zero.');
+        throw new Error(error.message);
+      }
+    },
+    // Meta não entra em conta nenhuma do banco: só a lista dela muda.
+    onSuccess: () => qc.invalidateQueries({ queryKey: chaves.metas }),
+  });
+}
+
+export function useApagarMeta() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Só o período no filtro: a RLS já limita o DELETE às metas desta conta.
+    mutationFn: async (periodo: Periodo) => {
+      const { error } = await supabase.from('metas').delete().eq('periodo', periodo);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: chaves.metas }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Despesas (gasto que não é ingrediente)
+// ---------------------------------------------------------------------------
+
+export function useDespesas(limite = 60) {
+  return useQuery({
+    // O limite entra na chave pra duas telas com limites diferentes não
+    // dividirem um cache de tamanho errado; a raiz continua `chaves.despesas`,
+    // que é o que `invalidarMovimento` derruba.
+    queryKey: [...chaves.despesas, limite],
+    queryFn: async () => {
       const { data, error } = await supabase
-        .from('vendas')
+        .from('despesas')
+        .select('id, descricao, valor, dia, created_at')
+        .order('dia', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limite);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Despesa[];
+    },
+  });
+}
+
+export function useSalvarDespesa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      descricao,
+      valor,
+      dia,
+    }: {
+      descricao: string;
+      valor: number;
+      /** "YYYY-MM-DD". Ausente = hoje, decidido pelo banco. */
+      dia?: string;
+    }) => {
+      const { data, error } = await supabase
+        .from('despesas')
         .insert({
           user_id: await donaAtual(),
-          produto_id: produto.id,
-          quantidade,
-          // O gatilho `fecha_venda` troca 0 pelo preço de tabela. Mandar o
-          // preço daqui permitiria, depois, uma tela de "vendi mais barato"
-          // sem mexer no banco.
-          preco_unitario: produto.preco_venda,
+          descricao: descricao.trim(),
+          valor,
+          // Sem `dia` no corpo, vale o DEFAULT `dia_local()`: o relógio do
+          // celular pode estar errado, o fuso do banco não.
+          ...(dia ? { dia } : {}),
         })
         .select('id')
         .single();
-      if (error) throw new Error(error.message);
+      if (error) {
+        // 23514 = check_violation: descrição vazia/longa ou valor <= 0.
+        if (error.code === '23514') {
+          throw new Error('Descreva o gasto (até 120 letras) e use um valor maior que zero.');
+        }
+        throw new Error(error.message);
+      }
       return (data as { id: string }).id;
     },
     onSuccess: () => invalidarMovimento(qc),
   });
 }
 
-export function useCancelarVenda() {
+export function useApagarDespesa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => rpc<boolean>('cancelar_venda', { _venda_id: id }),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('despesas').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+    },
     onSuccess: () => invalidarMovimento(qc),
   });
 }

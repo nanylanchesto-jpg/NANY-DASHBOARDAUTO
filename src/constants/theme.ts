@@ -1,140 +1,159 @@
 /**
- * Tokens visuais do app da Nany Lanches.
+ * Tokens visuais do app da Nany.
  *
  * Três restrições vindas do uso real, não de gosto:
  *
  * 1. Ela registra venda no pico da tarde, com uma mão. Alvo de toque mínimo de
- *    56 px (`Touch.alvo`), bem acima dos 44 px de praxe -- o botão de +1
- *    hot-dog precisa acertar de primeira, de lado, sem olhar.
- * 2. O celular fica no balcão, sob luz de rua. Contraste de texto sobre fundo
- *    acima de 7:1 (AAA) em vez dos 4,5:1 mínimos, porque tela de celular
- *    barato no sol perde muito mais que a conta teórica.
- * 3. Dinheiro se lê de longe: `Fonte.numero` existe pra valor monetário e é
- *    grande de propósito.
+ *    56 px (`Touch.alvo`), bem acima dos 44 px de praxe -- o produto precisa
+ *    acertar de primeira, de lado, sem olhar.
+ * 2. O celular fica no balcão, sob luz de rua. Contraste de TEXTO acima de 7:1
+ *    (AAA) em vez dos 4,5:1 mínimos, porque tela de celular barato no sol
+ *    perde muito mais que a conta teórica.
+ * 3. Dinheiro se lê de longe: `Fonte.destaque` e `Fonte.numero` existem pra
+ *    valor monetário e são grandes de propósito.
  *
- * PALETA PRETO E BRANCO, a pedido da dona do app. Antes era de lanchonete
- * (tomate, mostarda, brasa), escolhida porque o PI06 registra "abandono do
- * registro diário" como o risco mais alto e uma tela que ela reconhece como
- * sua é parte de não ser abandonada. Isso foi trocado conscientemente por
- * monocromático -- quem for reverter, reverta sabendo o que estava em jogo.
+ * PALETA DE LANCHONETE: tomate (marca), mostarda (ação), creme (fundo),
+ * marrom (texto), verde (resultado bom). Voltou a pedido da dona do app, depois
+ * de uma fase em preto e branco -- o PI06 registra "abandono do registro
+ * diário" como o risco mais alto, e uma tela que ela reconhece como sua é
+ * parte de não ser abandonada.
  *
- * O que o preto e branco custou, e como cada perda foi coberta:
+ * O que a cor NÃO resolve sozinha, e continua valendo da fase monocromática:
  *
- * - Estado deixou de ter matiz. `positivo`/`negativo`/`atencao` agora são
- *   níveis de cinza, então TODO lugar que sinaliza estado carrega também um
- *   símbolo ou palavra escrita. O `Aviso` em `components/ui` já fazia isso
- *   (✓ / ✕ / !); a regra agora é obrigatória, não um extra.
- * - Erro é o mais escuro e a faixa de erro é o fundo mais denso dos três, nos
- *   dois temas. Peso ótico virou o que a cor fazia.
- * - O gráfico perdeu a terceira série por cor. Ver `Grafico` embaixo.
- *
- * A vantagem que veio junto: cinza é imune a daltonismo. A validação de ΔE com
- * simulação de protan/deutan, que governava a paleta antiga, deixa de ser o
- * gargalo -- o que resta é separação de LUMINOSIDADE, medida abaixo.
+ * - Tomate e verde são o par clássico que some pra quem tem protanopia ou
+ *   deuteranopia. Então estado NUNCA viaja só na cor: `Aviso` tem símbolo
+ *   (✓ / ✕ / !), número negativo vem com a palavra ("prejuízo"), e no gráfico
+ *   o dia de prejuízo tem hachura E desce abaixo da linha de base.
+ * - O tomate (`marca`) e o verde suave da identidade (#57A773) ficam longe
+ *   dos 7:1 de texto sobre o creme: dão 3,96:1 e 2,75:1. Por isso existem
+ *   DOIS tons de cada família: o vivo, pra preencher (ícone, indicador, barra,
+ *   faixa), e o escuro, pra escrever (`negativo`, `positivo`). Escrever com
+ *   `marca` só no logotipo "Nany", que é marca e está fora da regra de
+ *   contraste de texto. O #57A773 não chega nem nos 3:1 de barra (2,92:1 no
+ *   cartão branco), então `Grafico.lucro` é o mesmo matiz um pouco mais
+ *   escuro (#3E8E5A, 4,02:1).
+ * - A mostarda (`acao`) contra o creme tem pouca separação de luminosidade
+ *   (1,61:1): o botão se destaca pelo matiz e pelo tamanho, e ganha a borda
+ *   `acaoBorda` (3,35:1 contra o fundo) pra silhueta não depender do matiz.
  */
 
 export type Esquema = 'light' | 'dark';
 
 type Paleta = {
   fundo: string;
+  /** Cartão. Branco sobre creme, com sombra leve em vez de contorno. */
   superficie: string;
+  /** Fundo recuado: trilho da barra de progresso, ficha solta, estado vazio. */
   superficieAlt: string;
+  /** Contorno de campo e de ficha. 3:1 contra as três superfícies. */
   borda: string;
+  /** Linha divisória. Decorativa, sem requisito de contraste. */
+  divisor: string;
   texto: string;
   textoFraco: string;
-  primaria: string;
-  primariaTexto: string;
+  /** Tomate. Preenchimento, ícone, indicador -- NÃO texto corrido. */
+  marca: string;
+  /** Ícone sobre `marca` (a aba ativa). */
+  sobreMarca: string;
+  /** Mostarda. Fundo do botão principal. */
+  acao: string;
+  acaoTexto: string;
+  acaoBorda: string;
+  /** Marrom cheio com texto creme: opção escolhida, contador de itens. */
+  inverso: string;
+  inversoTexto: string;
+  /** Texto de estado. 7:1 contra as três superfícies e contra o `*Fraco` da família. */
   positivo: string;
   negativo: string;
   atencao: string;
-  /** Fundo tênue das faixas de aviso. Sem matiz: o que separa é a densidade. */
+  /** Fundo tênue das faixas de estado. */
   positivoFraco: string;
   negativoFraco: string;
   atencaoFraco: string;
+  /** Sombra do cartão, no formato de `boxShadow`. */
+  sombra: string;
 };
 
 /**
- * Medido (AAA pede 7:1 pra texto, WCAG 1.4.11 pede 3:1 pra contorno de campo).
- * Cada tom de texto foi conferido contra as TRÊS superfícies em que ele pode
- * cair (`fundo`, `superficie`, `superficieAlt`), e o número abaixo é o pior
- * caso -- não o mais bonito:
+ * Medido por `scripts/checa-contraste.mjs` (AAA pede 7:1 pra texto; WCAG
+ * 1.4.11 pede 3:1 pra contorno, ícone e barra). Cada tom de texto é conferido
+ * contra as TRÊS superfícies em que ele pode cair, e o número que importa é o
+ * pior caso. Mexeu aqui, roda `npm run checa-paleta`.
  *
- *   claro   texto 19,3:1 · textoFraco 7,2:1 · borda 4,2:1
- *   escuro  texto 17,0:1 · textoFraco 7,4:1 · borda 3,2:1
- *
- * `scripts/checa-contraste.mjs` roda essa conferência. Mexeu aqui, roda ele.
+ * Os mais apertados, todos no claro e todos contra `superficieAlt`:
+ * `atencao` 7,03:1, `textoFraco` 7,12:1, `Grafico.barra` 3,01:1. Escurecer o
+ * creme recuado, mesmo pouco, derruba esses três antes de qualquer outro.
  */
 export const Cores: Record<Esquema, Paleta> = {
   light: {
-    fundo: '#FFFFFF',
-    // Igual ao fundo de propósito: cartão em preto e branco se define pelo
-    // contorno, não por um cinza de fundo que vira sujeira sob luz de rua.
+    fundo: '#FFF7EA',
     superficie: '#FFFFFF',
-    superficieAlt: '#F5F5F5',
-    borda: '#767676',
-    texto: '#000000',
-    textoFraco: '#525252',
-    primaria: '#000000',
-    primariaTexto: '#FFFFFF',
-    // Erro é o mais escuro dos três: sem matiz, quem grita é o peso.
-    negativo: '#000000',
-    atencao: '#3D3D3D',
-    positivo: '#525252',
-    negativoFraco: '#E6E6E6',
-    atencaoFraco: '#EDEDED',
-    positivoFraco: '#F5F5F5',
+    superficieAlt: '#F8EBD6',
+    borda: '#8A7263',
+    divisor: '#EADBC6',
+    texto: '#2B211C',
+    textoFraco: '#5C4A3F',
+    marca: '#D94A35',
+    sobreMarca: '#FFFFFF',
+    acao: '#F4BE45',
+    acaoTexto: '#2B211C',
+    acaoBorda: '#B07F14',
+    inverso: '#2B211C',
+    inversoTexto: '#FFF7EA',
+    positivo: '#1A5430',
+    negativo: '#86271A',
+    atencao: '#6A4800',
+    positivoFraco: '#E3F1E7',
+    negativoFraco: '#FBE4DE',
+    atencaoFraco: '#FCEFC7',
+    sombra: '0px 1px 2px rgba(43, 33, 28, 0.06), 0px 6px 16px rgba(43, 33, 28, 0.07)',
   },
   dark: {
-    fundo: '#000000',
-    superficie: '#121212',
-    superficieAlt: '#1C1C1C',
-    borda: '#6B6B6B',
-    texto: '#FFFFFF',
-    textoFraco: '#ABABAB',
-    primaria: '#FFFFFF',
-    primariaTexto: '#000000',
-    negativo: '#FFFFFF',
-    atencao: '#D4D4D4',
-    positivo: '#ABABAB',
-    // No escuro a densidade inverte: a faixa de erro é a mais CLARA, que é a
-    // que mais se descola do preto. O peso continua no erro.
-    negativoFraco: '#333333',
-    atencaoFraco: '#262626',
-    positivoFraco: '#1C1C1C',
+    fundo: '#1A1411',
+    superficie: '#251D19',
+    superficieAlt: '#302621',
+    borda: '#9C8778',
+    divisor: '#3A2F29',
+    texto: '#FFF7EA',
+    textoFraco: '#D2C2B4',
+    marca: '#EE6A52',
+    sobreMarca: '#1A1411',
+    acao: '#F4BE45',
+    acaoTexto: '#2B211C',
+    acaoBorda: '#C99A2E',
+    inverso: '#FFF7EA',
+    inversoTexto: '#2B211C',
+    positivo: '#8FD6A6',
+    negativo: '#FFA593',
+    atencao: '#F6C95E',
+    positivoFraco: '#1C3325',
+    negativoFraco: '#3E2019',
+    atencaoFraco: '#3A2D12',
+    sombra: '0px 1px 2px rgba(0, 0, 0, 0.4)',
   },
 };
 
 /**
- * Tinta das barras do gráfico — SEPARADA das cores de texto acima, porque o
- * trabalho é outro.
+ * Tinta das barras dos gráficos, separada das cores de texto porque o
+ * trabalho é outro (3:1 de elemento gráfico, não 7:1 de texto).
  *
- * Em preto e branco, três séries não cabem em três cinzas. Dois cinzas já é o
- * limite do que se distingue numa barra de 20 px vista de lado no balcão, e o
- * terceiro estado (dia no prejuízo) teria que ser um cinza no meio dos outros
- * dois -- exatamente onde ninguém separa.
+ * - `barra`: dia comum no gráfico de vendas.
+ * - `destaque`: o dia de hoje no gráfico de vendas.
+ * - `lucro` / `prejuizo`: o gráfico de lucro.
  *
- * Então a terceira série NÃO é uma terceira tinta: é TEXTURA. O dia de
- * prejuízo é desenhado com hachura diagonal (`<Pattern>` em `grafico-dias`)
- * na mesma tinta do lucro, mais um contorno pra barra não se perder no fundo.
- * Por isso `prejuizo` e `lucro` têm o mesmo valor aqui: não é engano nem
- * copy-paste, é a mesma tinta usada de duas maneiras. Trocar `prejuizo` por
- * "um cinza diferente pra ficar coerente" desfaz justamente o que separa os
- * dois.
- *
- * Separação de luminosidade medida (WCAG 1.4.11 pede 3:1 pra elemento
- * gráfico), contra a superfície do cartão e entre os dois segmentos da mesma
- * barra empilhada:
- *
- *   claro   custo/superfície 3,45:1 · lucro/superfície 21,0:1 · custo/lucro 6,1:1
- *   escuro  custo/superfície 3,78:1 · lucro/superfície 18,7:1 · custo/lucro 5,0:1
- *
- * As três salvaguardas que já existiam continuam, e agora são o que sustenta a
- * leitura: a legenda é fixa, há 2 px de fundo entre os segmentos empilhados, e
- * tocar a barra abre os valores escritos.
+ * `prejuizo` tem matiz próprio (tomate), mas NÃO depende dele: vermelho contra
+ * verde é justamente o par que protan e deutan confundem, e em luminosidade os
+ * dois quase empatam (1,23:1 no claro, 1,29:1 no escuro). O dia de prejuízo é
+ * desenhado com hachura e abaixo da linha de base, e a leitura do dia escreve
+ * "prejuízo". Tirar a hachura "porque agora tem cor" apaga a única distinção
+ * que sobra pra quem não enxerga a diferença entre os dois.
  */
-export const Grafico: Record<Esquema, { custo: string; lucro: string; prejuizo: string }> = {
-  light: { custo: '#8A8A8A', lucro: '#000000', prejuizo: '#000000' },
-  dark: { custo: '#707070', lucro: '#FFFFFF', prejuizo: '#FFFFFF' },
+export const Grafico: Record<
+  Esquema,
+  { barra: string; destaque: string; lucro: string; prejuizo: string }
+> = {
+  light: { barra: '#9A8474', destaque: '#D94A35', lucro: '#3E8E5A', prejuizo: '#C8412D' },
+  dark: { barra: '#8C7A6C', destaque: '#EE6A52', lucro: '#5DBA7E', prejuizo: '#EE6A52' },
 };
 
 /** Escala de 4 px: todo espaçamento do app sai daqui, nada de número solto. */
@@ -145,35 +164,49 @@ export const Espaco = {
   lg: 16,
   xl: 24,
   xxl: 32,
+  xxxl: 48,
 } as const;
 
 export const Raio = {
-  sm: 8,
-  md: 12,
-  lg: 18,
+  sm: 10,
+  md: 14,
+  lg: 20,
+  xl: 28,
   pill: 999,
 } as const;
 
+/**
+ * Escala tipográfica. Pouca variedade de propósito: hierarquia vem de tamanho
+ * E peso, e cada tela usa no máximo três degraus.
+ */
 export const Fonte = {
-  rotulo: 13,
-  corpo: 15,
-  titulo: 19,
+  rotulo: 14,
+  corpo: 16,
+  secao: 18,
+  titulo: 26,
   numero: 30,
-  numeroGrande: 40,
+  /** O número-herói da tela. Um por tela. */
+  destaque: 46,
+} as const;
+
+export const Peso = {
+  normal: '400',
+  medio: '600',
+  forte: '700',
+  pesado: '800',
 } as const;
 
 export const Touch = {
   /** Altura mínima de qualquer coisa clicável. */
   alvo: 56,
-  /** Botão de venda rápida: dá pra acertar sem mirar. */
-  alvoGrande: 84,
+  /** Botão da ação principal da tela (VENDER, FINALIZAR). */
+  alvoPrincipal: 72,
+  /** Bloco de produto na tela de venda: dá pra acertar sem mirar. */
+  alvoGrande: 104,
   /**
-   * Ação secundária DESTRUTIVA (desfazer venda, remover item da receita).
-   *
-   * Menor que `alvo` de propósito, e essa é a única exceção aos 56 px: aqui o
-   * erro caro é o toque acidental, não o toque que não pega. 44 px é o piso da
-   * Apple HIG -- abaixo disso vira difícil de acertar de propósito também, que
-   * era o caso dos 40 px que estavam no cadastro.
+   * Ação secundária DESTRUTIVA (desfazer, remover). Menor que `alvo` de
+   * propósito: aqui o erro caro é o toque acidental, não o toque que não pega.
+   * 44 px é o piso da Apple HIG.
    */
   alvoSecundario: 44,
 } as const;

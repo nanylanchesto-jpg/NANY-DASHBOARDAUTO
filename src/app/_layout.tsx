@@ -5,13 +5,18 @@ import { forwardRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icone, type NomeIcone } from '@/components/icone';
 // Em `components/`, não em `app/`: dentro de `app/` o arquivo viraria a rota
 // `/login`, alcançável por URL e renderizada FORA das abas -- uma tela de
 // login aparecendo pra quem já está logado.
 import { TelaLogin } from '@/components/tela-login';
-import { Espaco, Raio, Touch } from '@/constants/theme';
+import { Espaco, Fonte, LarguraMax, Peso, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import { useSessao } from '@/lib/sessao';
+
+/** A pílula da aba ativa: larga o bastante pro ícone não encostar na borda. */
+const LARGURA_PILULA = 64;
+const ALTURA_PILULA = 32;
 
 /**
  * `expo-router/ui` (headless) em vez de `NativeTabs` do template e de
@@ -71,6 +76,10 @@ function Portao() {
 }
 
 /**
+ * Três abas e nada mais: Hoje (olhar), Vender (fazer), Planejar (todo o
+ * resto, numa pilha). Cada aba a mais na barra é um alvo menor e mais uma
+ * palavra pra ela aprender.
+ *
  * O `<TabList>` tem que ser filho DIRETO de `<Tabs>`.
  *
  * `Tabs` não renderiza os filhos pra descobrir as abas: ele percorre o JSX e
@@ -93,33 +102,46 @@ function Abas() {
           próprio TabSlot põe no contêiner das telas e na tela focada. Sem isso,
           tela mais alta que o visor não encolhe: a coluna transborda e a
           `TabList`, que vem DEPOIS dela, é empurrada pra fora da área visível --
-          no Cadastro, que é a tela mais longa, a barra de navegação sumia e não
-          tinha como trocar de aba.
+          no antigo Cadastro (hoje Produtos, dentro do Planejar), que era a tela
+          mais longa, a barra de navegação sumia e não tinha como trocar de aba.
 
           Só acontece na web: no app nativo o react-native-screens recorta o
           contêiner, e aí o `flexShrink: 0` não faz diferença. Como este é o
           mesmo bundle nos dois lugares, o bug existia só de um lado. */}
       <TabSlot style={{ minHeight: 0, flexShrink: 1 }} />
       <TabList
+        accessibilityRole="tablist"
         style={[
           estilos.barra,
           {
             backgroundColor: cores.superficie,
-            borderTopColor: cores.borda,
+            borderTopColor: cores.divisor,
             paddingBottom: Math.max(inset.bottom, Espaco.sm),
           },
         ]}>
         <TabTrigger name="hoje" href="/" asChild>
-          <ItemDeAba icone="◆" rotulo="Hoje" />
+          <ItemDeAba icone="hoje" rotulo="Hoje" />
         </TabTrigger>
         <TabTrigger name="vender" href="/vender" asChild>
-          <ItemDeAba icone="＋" rotulo="Vender" />
+          <ItemDeAba icone="vender" rotulo="Vender" />
         </TabTrigger>
-        <TabTrigger name="notinha" href="/notinha" asChild>
-          <ItemDeAba icone="▣" rotulo="Notinha" />
-        </TabTrigger>
-        <TabTrigger name="cadastro" href="/cadastro" asChild>
-          <ItemDeAba icone="☰" rotulo="Cadastro" />
+        {/* `resetOnFocus` DESLIGADO de propósito (é a prop do `TabTrigger`
+            instalado; conferido em `expo-router/build/ui/TabTrigger.d.ts`).
+
+            Ligado, voltar pra aba zera a pilha do Planejar (`TabRouter.js`
+            apaga o `state` da rota). E o caso real é este: ela está conferindo
+            a nota que o Gemini acabou de ler, chega cliente, ela pula pro
+            Vender, vende, volta -- e a conferência tem que estar onde ficou. As
+            telas das abas continuam montadas escondidas (`TabSlot.js`), então
+            sem o reset o estado sobrevive; com ele, a leitura (que gasta cota)
+            iria pro lixo.
+
+            Pra voltar ao hub, basta tocar de novo em Planejar com ela aberta:
+            o `TabTrigger` emite `tabPress` e a pilha faz `popToTop` sozinha
+            (`fork/native-stack/createNativeStackNavigator.js`) -- o mesmo
+            gesto do app nativo. */}
+        <TabTrigger name="planejar" href="/planejar" asChild resetOnFocus={false}>
+          <ItemDeAba icone="planejar" rotulo="Planejar" />
         </TabTrigger>
       </TabList>
     </Tabs>
@@ -129,38 +151,74 @@ function Abas() {
 /**
  * `forwardRef` porque o `asChild` do TabTrigger passa ref e props de aba pro
  * filho; sem encaminhar, o React avisa e o toque não navega.
+ *
+ * Desenho de barra de app, não de site: a aba ativa ganha uma pílula tomate
+ * atrás do ícone, e o rótulo escrito fica SEMPRE visível. Não é só enfeite: a
+ * pílula diz "você está aqui" por forma e tamanho, então a aba ativa não
+ * depende de distinguir tomate de marrom -- e o rótulo ainda engrossa.
  */
 const ItemDeAba = forwardRef<
   View,
-  TabTriggerSlotProps & { icone: string; rotulo: string }
+  TabTriggerSlotProps & { icone: NomeIcone; rotulo: string }
 >(({ icone, rotulo, isFocused, ...props }, ref) => {
   const { cores } = useTema();
-  const cor = isFocused ? cores.primaria : cores.textoFraco;
+  const ativo = Boolean(isFocused);
 
   return (
     <Pressable
       ref={ref}
       {...props}
       accessibilityRole="tab"
-      accessibilityState={{ selected: Boolean(isFocused) }}
-      style={({ pressed }) => [estilos.item, { opacity: pressed ? 0.6 : 1 }]}>
-      {/* Sem `lineHeight` fixo: o React Native escala `fontSize` com a fonte do
-          sistema mas NÃO escala `lineHeight`, então um `lineHeight: 24` cravado
-          cortava o glifo assim que alguém aumentava a fonte do aparelho -- e
-          quem trabalha em balcão é justamente quem costuma aumentar. O ícone é
-          decorativo: o rótulo escrito abaixo é que nomeia a aba. */}
-      <Text
-        aria-hidden
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={{ fontSize: 20, color: cor }}>
-        {icone}
-      </Text>
-      {/* O rótulo escrito fica sempre visível, nunca só o ícone: são quatro
-          telas que ela vai aprender uma vez, e "▣" não quer dizer nada sozinho. */}
-      <Text style={{ fontSize: 11, color: cor, fontWeight: isFocused ? '700' : '400' }}>
-        {rotulo}
-      </Text>
+      accessibilityLabel={rotulo}
+      // `aria-selected` e não `accessibilityState`: o react-native-web descarta
+      // o objeto sem avisar (ver o cabeçalho do ui.tsx), e o leitor de tela do
+      // Safari nunca sabia qual aba estava aberta. O RN nativo converte.
+      aria-selected={ativo}
+      style={estilos.item}>
+      {({ pressed }) => (
+        <>
+          <View
+            style={[
+              estilos.pilula,
+              {
+                // Na inativa, o toque acende a pílula em creme: o retorno
+                // aparece onde o dedo está, como na barra do Android.
+                backgroundColor: ativo
+                  ? cores.marca
+                  : pressed
+                    ? cores.superficieAlt
+                    : 'transparent',
+                opacity: ativo && pressed ? 0.85 : 1,
+              },
+            ]}>
+            {/* O ícone é decorativo (o `Icone` já sai escondido do leitor de
+                tela): quem nomeia a aba é o rótulo. Um pouco mais grosso na
+                ativa, pra o traço fino não se perder sobre o tomate. */}
+            <Icone
+              nome={icone}
+              tamanho={24}
+              cor={ativo ? cores.sobreMarca : cores.textoFraco}
+              espessura={ativo ? 2.25 : 2}
+            />
+          </View>
+          {/* Sem `lineHeight` fixo: o React Native escala `fontSize` com a fonte
+              do sistema mas NÃO escala `lineHeight`, então um valor cravado
+              cortava o glifo assim que alguém aumentava a fonte do aparelho --
+              e quem trabalha em balcão é justamente quem costuma aumentar.
+
+              O rótulo fica sempre visível, nunca só o ícone: são três telas que
+              ela vai aprender uma vez, e uma prancheta sozinha não diz
+              "Planejar". */}
+          <Text
+            style={{
+              fontSize: Fonte.rotulo,
+              color: ativo ? cores.texto : cores.textoFraco,
+              fontWeight: ativo ? Peso.forte : Peso.medio,
+            }}>
+            {rotulo}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 });
@@ -170,16 +228,26 @@ ItemDeAba.displayName = 'ItemDeAba';
 const estilos = StyleSheet.create({
   barra: {
     flexDirection: 'row',
+    // No desktop da apresentação, três abas esticadas em 1400 px viram menu
+    // de site; centradas e com largura de celular, continuam barra de app.
+    justifyContent: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: Espaco.sm,
     paddingHorizontal: Espaco.sm,
   },
   item: {
     flex: 1,
+    maxWidth: LarguraMax / 3,
     minHeight: Touch.alvo,
-    borderRadius: Raio.md,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: Espaco.xs,
+  },
+  pilula: {
+    width: LARGURA_PILULA,
+    height: ALTURA_PILULA,
+    borderRadius: Raio.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

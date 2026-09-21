@@ -1,86 +1,128 @@
-import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { router } from 'expo-router';
+import { Fragment } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { GraficoDias } from '@/components/grafico-dias';
+import { GraficoBarras } from '@/components/grafico-barras';
+import { Icone } from '@/components/icone';
+import { Logotipo } from '@/components/tela-login';
 import {
   Aviso,
+  BarraProgresso,
   Botao,
   Carregando,
   Cartao,
+  Divisor,
+  Indicador,
+  ItemLista,
   Linha,
+  Secao,
   Tela,
-  Titulo,
   Txt,
-  Vazio,
 } from '@/components/ui';
-import { Espaco, Raio, Touch } from '@/constants/theme';
+import { Espaco, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
-import { useFechamento, useParaComprar, useResumoPorDia, useVendasPorProduto } from '@/lib/dados';
-import { dinheiro, dinheiroCurto, inteiro, quantidade, saldo } from '@/lib/formato';
-import { sair } from '@/lib/sessao';
+import {
+  custoDoProduto,
+  useFechamento,
+  useMetas,
+  useParaComprar,
+  useProdutos,
+  useResumoPorDia,
+  type DiaResumo,
+  type Fechamento,
+  type Meta,
+  type ParaComprar,
+  type Periodo,
+  type Produto,
+} from '@/lib/dados';
+import { dataLocal, diaDaSemana, dinheiro, inteiro } from '@/lib/formato';
+import { hojeDaSerie, metaAtiva, somaPeriodo } from '@/lib/periodo';
 
-const JANELAS = [7, 14, 30] as const;
-
-export default function Dashboard() {
-  const [janela, setJanela] = useState<(typeof JANELAS)[number]>(7);
-
-  const hoje = useFechamento();
-  const serie = useResumoPorDia(janela);
-  const porProduto = useVendasPorProduto(30);
+/**
+ * Hoje: a tela que ela abre de relance entre um cliente e outro.
+ *
+ * Responde, nesta ordem, a quatro perguntas -- quanto vendi, quanto ganhei,
+ * preciso vender mais, tem algo pedindo atenção -- e oferece UMA ação: vender.
+ * Tudo o que não responde a nenhuma delas mora no Planejar; o que só às vezes
+ * responde (meta, avisos) só aparece quando existe.
+ */
+export default function Hoje() {
+  const fechamento = useFechamento();
+  const serie = useResumoPorDia(7);
+  const metas = useMetas();
+  const meta = metaAtiva(metas.data);
+  // A meta do mês precisa do mês inteiro, e 7 dias não cobrem. Hook não pode
+  // ser condicional, então o condicional está no argumento: sem meta de mês a
+  // chave é a mesma da linha de cima e o React Query não busca duas vezes.
+  const serieDaMeta = useResumoPorDia(meta?.periodo === 'mes' ? 31 : 7);
   const comprar = useParaComprar();
+  const produtos = useProdutos();
 
-  const carregando = hoje.isLoading || serie.isLoading;
-  const falhou = hoje.error ?? serie.error;
+  // A meta entra na espera de propósito: ela fica ACIMA do botão Vender, e
+  // aparecer depois empurraria o botão pra baixo do dedo que já ia tocar.
+  // Os avisos e o gráfico ficam abaixo dele e podem chegar quando chegarem.
+  const carregando =
+    fechamento.isLoading || serie.isLoading || metas.isLoading || serieDaMeta.isLoading;
+  const falha = fechamento.error ?? serie.error;
+  const atualizando =
+    !carregando &&
+    (fechamento.isFetching || serie.isFetching || comprar.isFetching || produtos.isFetching);
+
+  const dias = serie.data ?? [];
+  // O "hoje" é o do banco (`dia_local()`), nunca o relógio do celular.
+  const hoje = hojeDaSerie(dias) || (fechamento.data?.dia ?? '');
 
   return (
-    <Tela atualizando={hoje.isFetching || serie.isFetching}>
-      <Titulo
-        acao={
-          // `minHeight: 0` deixava o alvo do tamanho da letra (~18 px). Alvo
-          // secundário, com a margem negativa segurando a altura visual da
-          // linha do título -- o dedo ganha os 44 px, o olho não vê diferença.
-          <Botao
-            variante="fantasma"
-            onPress={sair}
-            style={{
-              minHeight: Touch.alvoSecundario,
-              paddingHorizontal: Espaco.sm,
-              marginVertical: -Espaco.md,
-              marginRight: -Espaco.sm,
-            }}>
-            Sair
-          </Botao>
-        }>
-        Hoje
-      </Titulo>
+    <Tela atualizando={atualizando}>
+      <Linha entre style={estilos.cabecalho}>
+        <Logotipo tamanho={28} />
+        {hoje ? (
+          <Txt tipo="rotulo" tom="textoFraco" rotuloAcessivel={DATA_EXTENSO.format(dataLocal(hoje))}>
+            {dataCurta(hoje)}
+          </Txt>
+        ) : null}
+      </Linha>
 
-      {falhou ? (
-        <Aviso tom="negativo">
-          {falhou instanceof Error ? falhou.message : 'Não consegui carregar os números.'}
-        </Aviso>
+      {falha ? (
+        <View style={{ gap: Espaco.xl }}>
+          <Aviso
+            tom="negativo"
+            acao={{
+              rotulo: 'Tentar de novo',
+              onPress: () => {
+                fechamento.refetch();
+                serie.refetch();
+              },
+            }}>
+            {falha instanceof Error ? falha.message : 'Não consegui carregar os números.'}
+          </Aviso>
+          {/* Sem os números ela ainda precisa conseguir vender. */}
+          <BotaoVender />
+        </View>
       ) : carregando ? (
         <Carregando />
       ) : (
         <>
-          <ResumoDeHoje dados={hoje.data} />
+          <View style={{ gap: Espaco.xl }}>
+            <Numeros dados={fechamento.data ?? null} />
+            {meta ? (
+              <BlocoMeta
+                meta={meta}
+                realizado={realizadoDaMeta(meta, fechamento.data ?? null, serieDaMeta.data, hoje)}
+              />
+            ) : null}
+            <BotaoVender />
+          </View>
 
-          <Titulo>Últimos dias</Titulo>
-          <SeletorDeJanela valor={janela} onMudar={setJanela} />
-          <View style={{ height: Espaco.md }} />
-          {serie.data?.some((d) => d.receita > 0) ? (
-            <GraficoDias dias={serie.data} />
-          ) : (
-            <Vazio
-              titulo="Nenhuma venda registrada ainda"
-              dica="Use a aba Vender para marcar o que sair do balcão."
-            />
-          )}
-
-          <Titulo>Por produto (30 dias)</Titulo>
-          <PorProduto linhas={porProduto.data ?? []} carregando={porProduto.isLoading} />
-
-          <Titulo>Repor no mercado</Titulo>
-          <ParaComprar linhas={comprar.data ?? []} carregando={comprar.isLoading} />
+          <View style={{ paddingTop: Espaco.sm }}>
+            {/* Espera as duas listas: chegando uma de cada vez, os avisos de
+                produto apareceriam e depois desceriam pra dar lugar aos de
+                estoque, que são mais urgentes. */}
+            {comprar.isLoading || produtos.isLoading ? null : (
+              <Atencao ingredientes={comprar.data} produtos={produtos.data} />
+            )}
+            <UltimosDias dias={dias} metaDiaria={meta?.periodo === 'dia' ? meta.valor : undefined} />
+          </View>
         </>
       )}
     </Tela>
@@ -88,256 +130,313 @@ export default function Dashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Fechamento de hoje
+// Data do cabeçalho
 // ---------------------------------------------------------------------------
 
-function ResumoDeHoje({ dados }: { dados: ReturnType<typeof useFechamento>['data'] }) {
-  if (!dados) return <Vazio titulo="Sem movimento hoje" />;
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-  const semVenda = dados.atendimentos === 0;
+/** Pro leitor de tela: "segunda-feira, 21 de setembro", sem abreviação pra decifrar. */
+const DATA_EXTENSO = new Intl.DateTimeFormat('pt-BR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+/**
+ * "seg, 21 set". Montada à mão e não com `Intl` de mês curto: o pt-BR do
+ * `Intl` devolve "21 de set.", com "de" e ponto, que é mais comprido do que o
+ * canto do cabeçalho comporta.
+ */
+function dataCurta(iso: string) {
+  const mes = MESES[Number(iso.slice(5, 7)) - 1] ?? '';
+  return `${diaDaSemana(iso)}, ${Number(iso.slice(8, 10))} ${mes}`;
+}
+
+// ---------------------------------------------------------------------------
+// Vendas, lucro e caixa
+// ---------------------------------------------------------------------------
+
+function Numeros({ dados }: { dados: Fechamento | null }) {
+  const receita = dados?.receita ?? 0;
+  const lucro = dados?.lucro_vendas ?? 0;
+  const caixa = dados?.caixa ?? 0;
+  const pedidos = dados?.atendimentos ?? 0;
+
+  // Lucro e caixa discordam no dia de feira: ela compra a semana inteira
+  // hoje, e o caixa fica negativo com as vendas dando lucro. Sem dizer POR QUÊ
+  // na tela, isso parece prejuízo e ela conclui que o app está errado. Uma
+  // legenda de duas palavras basta; o parágrafo que havia aqui ninguém lia.
+  const motivoDoCaixa =
+    caixa < 0 && dados
+      ? dados.compras > 0
+        ? 'compras de hoje'
+        : dados.despesas > 0
+          ? 'gastos de hoje'
+          : undefined
+      : undefined;
 
   return (
-    <Cartao style={{ gap: Espaco.lg }}>
-      {/* Número-herói: uma coisa só, grande. O lucro das vendas é a resposta
-          pra "o negócio deu lucro hoje?" -- que é a pergunta do PI. */}
-      <View style={{ gap: 2 }}>
-        <Txt tipo="rotulo" tom="textoFraco">
-          Lucro das vendas de hoje
-        </Txt>
-        <Txt
-          tipo="numeroGrande"
-          tom={dados.lucro_vendas < 0 ? 'negativo' : dados.lucro_vendas > 0 ? 'positivo' : 'texto'}>
-          {dinheiro(dados.lucro_vendas)}
-        </Txt>
-        <Txt tipo="rotulo" tom="textoFraco">
-          {inteiro(dados.unidades)} {dados.unidades === 1 ? 'item vendido' : 'itens vendidos'} em{' '}
-          {inteiro(dados.atendimentos)}{' '}
-          {dados.atendimentos === 1 ? 'registro' : 'registros'}
-        </Txt>
-      </View>
+    <>
+      {/* Vendas é o herói porque é a primeira pergunta ("quanto vendi?") e o
+          número que ela confere contra a gaveta. */}
+      <Indicador
+        grande
+        rotulo="Vendas"
+        valor={dinheiro(receita)}
+        legenda={
+          pedidos === 0
+            ? 'Nenhuma venda ainda'
+            : `${inteiro(pedidos)} ${pedidos === 1 ? 'venda' : 'vendas'}`
+        }
+      />
 
-      <Linha style={{ flexWrap: 'wrap', rowGap: Espaco.md }}>
-        <Numero rotulo="Entrou (vendas)" valor={dinheiroCurto(dados.receita)} />
-        <Numero rotulo="Custo do vendido" valor={dinheiroCurto(dados.custo_vendido)} />
-        <Numero rotulo="Compras do dia" valor={dinheiroCurto(dados.compras)} />
-        <Numero
-          rotulo="Caixa do dia"
-          valor={dinheiroCurto(dados.caixa)}
-          tom={dados.caixa < 0 ? 'negativo' : 'texto'}
-        />
-      </Linha>
-
-      {/* A diferença entre os dois resultados precisa estar escrita na tela, e
-          não só no código: sem isso, um dia de feira (caixa negativo, lucro
-          positivo) parece prejuízo e ela conclui que o app está errado. */}
-      {dados.caixa < 0 && dados.lucro_vendas > 0 ? (
-        <Aviso tom="atencao">
-          O caixa ficou negativo porque as compras de hoje cobrem os próximos dias. As vendas de
-          hoje, em si, deram lucro.
-        </Aviso>
-      ) : null}
-
-      {semVenda && dados.compras > 0 ? (
-        <Aviso tom="atencao">
-          Compras lançadas, mas nenhuma venda registrada hoje.
-        </Aviso>
-      ) : null}
-    </Cartao>
+      <Cartao>
+        <Linha style={{ gap: Espaco.lg, alignItems: 'flex-start' }}>
+          {/* No negativo o RÓTULO vira "Prejuízo" e o valor vai sem sinal: a
+              palavra carrega o estado, não o tom de vermelho nem um "−" fácil
+              de não ver. */}
+          <Indicador
+            style={{ flex: 1 }}
+            rotulo={lucro < 0 ? 'Prejuízo' : 'Lucro'}
+            valor={dinheiro(Math.abs(lucro))}
+            tom={lucro > 0 ? 'positivo' : lucro < 0 ? 'negativo' : 'texto'}
+          />
+          <Indicador
+            style={{ flex: 1 }}
+            rotulo="Caixa"
+            valor={dinheiro(caixa)}
+            tom={caixa < 0 ? 'negativo' : 'texto'}
+            legenda={motivoDoCaixa}
+          />
+        </Linha>
+      </Cartao>
+    </>
   );
 }
 
-function Numero({
-  rotulo,
-  valor,
-  tom = 'texto',
-}: {
-  rotulo: string;
-  valor: string;
-  tom?: 'texto' | 'negativo' | 'positivo';
-}) {
+// ---------------------------------------------------------------------------
+// Meta
+// ---------------------------------------------------------------------------
+
+const NOME_DA_META: Record<Periodo, string> = {
+  dia: 'Meta do dia',
+  semana: 'Meta da semana',
+  mes: 'Meta do mês',
+};
+
+/**
+ * Quanto já foi vendido no período da meta. `null` quando a série do período
+ * não veio: aí a meta some, em vez de mostrar "faltam" a meta inteira.
+ */
+function realizadoDaMeta(
+  meta: Meta,
+  dados: Fechamento | null,
+  serie: DiaResumo[] | undefined,
+  hoje: string,
+): number | null {
+  // A do dia sai do MESMO número do herói: somada por outro caminho, uma
+  // diferença de centavo entre os dois faria ela desconfiar dos dois.
+  if (meta.periodo === 'dia') return dados?.receita ?? 0;
+  if (!serie || !hoje) return null;
+  return somaPeriodo(serie, meta.periodo, hoje).receita;
+}
+
+function BlocoMeta({ meta, realizado }: { meta: Meta; realizado: number | null }) {
+  const { cores } = useTema();
+  if (realizado === null) return null;
+
+  const nome = NOME_DA_META[meta.periodo];
+  const batida = realizado >= meta.valor;
+
   return (
-    <View style={{ minWidth: 120, flexGrow: 1, gap: 2 }}>
-      <Txt tipo="rotulo" tom="textoFraco">
-        {rotulo}
-      </Txt>
-      <Txt tipo="corpo" negrito tom={tom}>
-        {valor}
-      </Txt>
+    <View style={{ gap: Espaco.sm }}>
+      <Linha entre>
+        <Txt tipo="rotulo" tom="textoFraco">
+          {nome}
+        </Txt>
+        {/* "batida" escrito, com o ✓: a barra cheia muda de tinta, mas é a
+            palavra que diz que acabou. */}
+        {batida ? (
+          <Linha style={{ gap: Espaco.xs }}>
+            <Icone nome="ok" tamanho={18} cor={cores.positivo} espessura={2.5} />
+            <Txt tipo="corpo" tom="positivo" negrito>
+              batida
+            </Txt>
+          </Linha>
+        ) : (
+          <Txt tipo="corpo" negrito>
+            faltam {dinheiro(meta.valor - realizado)}
+          </Txt>
+        )}
+      </Linha>
+      <BarraProgresso
+        atual={realizado}
+        alvo={meta.valor}
+        rotuloAcessivel={`${nome}: ${dinheiro(realizado)} de ${dinheiro(meta.valor)}`}
+      />
     </View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Seletor de janela
+// A ação da tela
 // ---------------------------------------------------------------------------
 
-function SeletorDeJanela({
-  valor,
-  onMudar,
-}: {
-  valor: number;
-  onMudar: (dias: (typeof JANELAS)[number]) => void;
-}) {
-  const { cores } = useTema();
+function BotaoVender() {
   return (
-    <Linha style={{ gap: Espaco.xs }}>
-      {JANELAS.map((dias) => {
-        const ativo = dias === valor;
-        return (
-          <Pressable
-            key={dias}
-            accessibilityRole="button"
-            accessibilityState={{ selected: ativo }}
-            onPress={() => onMudar(dias)}
-            style={{
-              // Eram ~32 px de altura: é a troca de período do gráfico, ela
-              // usa de verdade, e não é destrutiva.
-              minHeight: Touch.alvoSecundario,
-              justifyContent: 'center',
-              paddingHorizontal: Espaco.md,
-              borderRadius: Raio.pill,
-              borderWidth: 1,
-              borderColor: ativo ? cores.primaria : cores.borda,
-              backgroundColor: ativo ? cores.primaria : 'transparent',
-            }}>
-            <Txt tipo="rotulo" negrito={ativo} tom={ativo ? 'primariaTexto' : 'textoFraco'}>
-              {dias} dias
-            </Txt>
-          </Pressable>
-        );
-      })}
-    </Linha>
+    <Botao grande icone="vender" onPress={() => router.push('/vender')}>
+      Vender
+    </Botao>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Por produto
+// Atenção
 // ---------------------------------------------------------------------------
 
-function PorProduto({
-  linhas,
-  carregando,
-}: {
-  linhas: { produto_id: string; nome: string; unidades: number; receita: number; lucro: number }[];
-  carregando: boolean;
-}) {
-  const { grafico } = useTema();
+/** Acima disso a lista vira inventário; o resto fica atrás de um "Mais N". */
+const MAX_AVISOS = 3;
 
-  if (carregando) return <Carregando />;
+type Alerta = {
+  chave: string;
+  titulo: string;
+  valor: string;
+  tom: 'negativo' | 'atencao';
+  destino: 'estoque' | 'produtos';
+};
 
-  const comVenda = linhas.filter((linha) => linha.unidades > 0);
-  if (comVenda.length === 0) {
-    return <Vazio titulo="Nenhuma venda nos últimos 30 dias" />;
+/**
+ * Só o que pede ação, na ordem da urgência: saldo negativo (compra que não
+ * foi lançada), ingrediente que acaba em menos de 3 dias, produto à venda sem
+ * custo nenhum (o lucro dele está saindo igual ao preço cheio).
+ *
+ * Listar o estoque inteiro transformaria o bloco em inventário, e ela pararia
+ * de olhar -- o que some junto é justamente o aviso do que está acabando. A
+ * ordem entre ingredientes já vem do banco (`ingredientes_para_comprar`).
+ */
+function alertas(ingredientes: ParaComprar[], produtos: Produto[]): Alerta[] {
+  const lista: Alerta[] = [];
+  for (const i of ingredientes) {
+    if (i.estoque_base < 0) {
+      lista.push({
+        chave: i.id,
+        titulo: i.nome,
+        valor: 'lançar compra',
+        tom: 'negativo',
+        destino: 'estoque',
+      });
+    } else if (i.dias_restantes !== null && i.dias_restantes < 3) {
+      // Arredonda pra baixo: "acaba em 2 dias" com 2,9 no estoque é o aviso
+      // que chega a tempo; com 3 ela deixaria pra depois.
+      const d = Math.floor(i.dias_restantes);
+      lista.push({
+        chave: i.id,
+        titulo: i.nome,
+        valor: d < 1 ? 'acaba hoje' : `acaba em ${d} ${d === 1 ? 'dia' : 'dias'}`,
+        tom: 'atencao',
+        destino: 'estoque',
+      });
+    }
   }
+  for (const p of produtos) {
+    if (p.ativo && custoDoProduto(p).tipo === 'ausente') {
+      lista.push({
+        chave: p.id,
+        titulo: p.nome,
+        valor: 'sem custo',
+        tom: 'atencao',
+        destino: 'produtos',
+      });
+    }
+  }
+  return lista;
+}
 
-  // A barra é proporcional ao MAIOR lucro em módulo, então um produto no
-  // prejuízo aparece do mesmo tamanho que um lucro equivalente -- o que é o
-  // ponto: a comparação é de peso no resultado, com o sinal na cor e no valor.
-  const teto = Math.max(...comVenda.map((linha) => Math.abs(linha.lucro)), 1);
+function abrir(destino: Alerta['destino']) {
+  if (destino === 'produtos') router.push('/planejar/produtos');
+  else router.push('/planejar/estoque');
+}
+
+function Atencao({
+  ingredientes,
+  produtos,
+}: {
+  ingredientes: ParaComprar[] | undefined;
+  produtos: Produto[] | undefined;
+}) {
+  const lista = alertas(ingredientes ?? [], produtos ?? []);
+  if (lista.length === 0) return null;
+
+  // Nunca mais que MAX_AVISOS linhas: passando, a última vira o "Mais N".
+  const visiveis = lista.length > MAX_AVISOS ? lista.slice(0, MAX_AVISOS - 1) : lista;
+  const escondidos = lista.slice(visiveis.length);
+  const destinoDoResto: Alerta['destino'] = escondidos.every((a) => a.destino === 'produtos')
+    ? 'produtos'
+    : 'estoque';
 
   return (
-    <Cartao style={{ gap: Espaco.lg }}>
-      {comVenda.map((linha) => {
-        const negativo = linha.lucro < 0;
-        return (
-          <View key={linha.produto_id} style={{ gap: Espaco.xs }}>
-            <Linha entre>
-              <Txt tipo="corpo" negrito numberOfLines={1} style={{ flex: 1 }}>
-                {linha.nome}
-              </Txt>
-              <Txt tipo="corpo" negrito tom={negativo ? 'negativo' : 'positivo'}>
-                {dinheiro(linha.lucro)}
-              </Txt>
-            </Linha>
-            <View
-              style={{
-                height: 10,
-                borderRadius: Raio.sm,
-                overflow: 'hidden',
-                backgroundColor: 'transparent',
-              }}>
-              {/* Em preto e branco `prejuizo` e `lucro` são a MESMA tinta (ver
-                  `Grafico` em constants/theme), então aqui o que separa é a
-                  barra vazada com contorno -- o mesmo papel que a hachura faz
-                  no gráfico de dias. Pintar as duas de sólido deixaria um
-                  produto no prejuízo idêntico a um no lucro. */}
-              <View
-                style={{
-                  height: '100%',
-                  width: `${Math.max(2, (Math.abs(linha.lucro) / teto) * 100)}%`,
-                  borderRadius: Raio.sm,
-                  backgroundColor: negativo ? 'transparent' : grafico.lucro,
-                  borderWidth: negativo ? 1.5 : 0,
-                  borderColor: grafico.prejuizo,
-                }}
-              />
-            </View>
-            <Txt tipo="rotulo" tom="textoFraco">
-              {inteiro(linha.unidades)} un. · {dinheiro(linha.receita)} de venda
-              {negativo ? ' · vendendo abaixo do custo' : ''}
-            </Txt>
-          </View>
-        );
-      })}
-    </Cartao>
+    <Secao titulo="Atenção">
+      <Cartao style={{ paddingVertical: Espaco.xs }}>
+        {visiveis.map((a, i) => (
+          <Fragment key={a.chave}>
+            {i > 0 ? <Divisor /> : null}
+            <ItemLista
+              alerta
+              titulo={a.titulo}
+              valor={a.valor}
+              tomValor={a.tom}
+              onPress={() => abrir(a.destino)}
+            />
+          </Fragment>
+        ))}
+        {escondidos.length > 0 ? (
+          <>
+            <Divisor />
+            <ItemLista
+              icone="mais"
+              titulo={`Mais ${escondidos.length}`}
+              rotuloAcessivel={`Mais ${escondidos.length} ${
+                escondidos.length === 1 ? 'aviso' : 'avisos'
+              }`}
+              onPress={() => abrir(destinoDoResto)}
+            />
+          </>
+        ) : null}
+      </Cartao>
+    </Secao>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Lista de reposição
+// Últimos dias
 // ---------------------------------------------------------------------------
 
-function ParaComprar({
-  linhas,
-  carregando,
-}: {
-  linhas: ReturnType<typeof useParaComprar>['data'];
-  carregando: boolean;
-}) {
-  if (carregando) return <Carregando />;
-  if (!linhas || linhas.length === 0) {
-    return (
-      <Vazio
-        titulo="Nenhum ingrediente cadastrado"
-        dica="Fotografe uma nota na aba Notinha: os ingredientes entram sozinhos."
-      />
-    );
-  }
+function UltimosDias({ dias, metaDiaria }: { dias: DiaResumo[]; metaDiaria?: number }) {
+  // Sete barras zeradas são uma régua vazia, não informação: sem venda na
+  // semana, o bloco não aparece (o "Nenhuma venda ainda" do topo já diz).
+  if (!dias.some((d) => d.receita > 0)) return null;
 
-  // Só o que pede atenção: negativo (compra não lançada) ou menos de 3 dias de
-  // estoque. Listar tudo transformaria a seção em inventário e ela pararia de
-  // olhar -- o que some junto é o aviso do que está acabando.
-  const urgentes = linhas.filter(
-    (linha) =>
-      linha.estoque_base < 0 || (linha.dias_restantes !== null && linha.dias_restantes < 3),
-  );
-
-  if (urgentes.length === 0) {
-    return <Vazio titulo="Estoque tranquilo" dica="Nada acabando nos próximos dias." />;
-  }
+  const pontos = [...dias]
+    .sort((a, b) => a.dia.localeCompare(b.dia))
+    .map((d) => ({ dia: d.dia, valor: d.receita }));
 
   return (
-    <Cartao style={{ gap: Espaco.md }}>
-      {urgentes.map((linha) => {
-        const negativo = linha.estoque_base < 0;
-        return (
-          <View key={linha.id} style={{ gap: 2 }}>
-            <Linha entre>
-              <Txt tipo="corpo" negrito numberOfLines={1} style={{ flex: 1 }}>
-                {linha.nome}
-              </Txt>
-              <Txt tipo="corpo" tom={negativo ? 'negativo' : 'atencao'} negrito>
-                {saldo(linha.estoque_base, linha.unidade)}
-              </Txt>
-            </Linha>
-            <Txt tipo="rotulo" tom="textoFraco">
-              {negativo
-                ? 'Saldo negativo: falta lançar a nota dessa compra.'
-                : `Dá para uns ${quantidade(Math.floor(linha.dias_restantes ?? 0))} dia(s) no ritmo da semana.`}
-            </Txt>
-          </View>
-        );
-      })}
-    </Cartao>
+    <Secao titulo="Últimos dias">
+      <Cartao>
+        {/* A linha da meta só com meta DIÁRIA: é a única comparável com a
+            barra de um dia. */}
+        <GraficoBarras modo="vendas" pontos={pontos} meta={metaDiaria} />
+      </Cartao>
+    </Secao>
   );
 }
+
+const estilos = StyleSheet.create({
+  cabecalho: {
+    // Mesma altura e mesmo centro do cabeçalho das outras abas (`Tela` com
+    // título): trocar de aba não faz o topo pular.
+    minHeight: Touch.alvoSecundario,
+    marginTop: -Espaco.xs,
+    marginBottom: Espaco.lg,
+  },
+});
