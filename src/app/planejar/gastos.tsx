@@ -20,7 +20,7 @@ import {
 } from '@/components/ui';
 import { Espaco, Touch } from '@/constants/theme';
 import { useApagarDespesa, useDespesas, useResumoPorDia, useSalvarDespesa } from '@/lib/dados';
-import { diaDaSemana, diaMes, dinheiro, numeroDeTexto } from '@/lib/formato';
+import { diaDaSemana, diaMes, dinheiro, intervaloCurto, numeroDeTexto } from '@/lib/formato';
 import { fimDoPeriodo, hojeDaSerie, inicioDoPeriodo, somaPeriodo } from '@/lib/periodo';
 
 /**
@@ -73,7 +73,7 @@ export default function Gastos() {
             valor={dinheiro(semana.compras + semana.despesas)}
             legenda={
               hoje
-                ? `${diaMes(inicioDoPeriodo('semana', hoje))} – ${diaMes(fimDoPeriodo('semana', hoje))}`
+                ? intervaloCurto(inicioDoPeriodo('semana', hoje), fimDoPeriodo('semana', hoje))
                 : undefined
             }
           />

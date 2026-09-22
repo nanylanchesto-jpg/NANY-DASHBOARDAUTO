@@ -28,7 +28,7 @@ import {
   type ParaComprar,
   type Periodo,
 } from '@/lib/dados';
-import { dinheiro, dinheiroCurto } from '@/lib/formato';
+import { dinheiro, dinheiroCurto, dinheiroSemSinal } from '@/lib/formato';
 import { hojeDaSerie, metaAtiva, somaPeriodo, type SomaPeriodo } from '@/lib/periodo';
 import { sair } from '@/lib/sessao';
 
@@ -236,7 +236,7 @@ function Resumo({
       <Indicador
         grande
         rotulo={soma.lucro < 0 ? 'Prejuízo' : 'Lucro'}
-        valor={dinheiro(soma.lucro)}
+        valor={dinheiroSemSinal(soma.lucro)}
         tom={tomLucro}
       />
       <Linha style={{ gap: Espaco.md, alignItems: 'flex-start' }}>

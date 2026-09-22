@@ -16,6 +16,20 @@ const INTEIRO = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 /** `|| 0` cobre NaN e null vindos de uma soma vazia do banco. */
 export const dinheiro = (valor: number | null | undefined) => MOEDA.format(valor || 0);
 
+/**
+ * Dinheiro sem o sinal, pra onde a PALAVRA já diz de que lado o número está
+ * ("Prejuízo R$ 24,30", "prejuízo R$ 3,80").
+ *
+ * A regra do app é essa, e vale nas duas pontas: onde aparece "prejuízo" ou
+ * "Prejuízo", o valor vem em módulo; onde não aparece (Caixa, por exemplo), o
+ * menos é que carrega o estado e fica. As duas coisas juntas ("Prejuízo
+ * −R$ 24,30") é negação dupla, e era o que acontecia no hub, no Lucro, no
+ * Histórico e na leitura do gráfico enquanto a Hoje e os Produtos já faziam
+ * sem sinal -- o mesmo dia aparecia de dois jeitos em duas telas.
+ */
+export const dinheiroSemSinal = (valor: number | null | undefined) =>
+  MOEDA.format(Math.abs(valor || 0));
+
 export const quantidade = (valor: number | null | undefined) => NUMERO.format(valor || 0);
 
 export const inteiro = (valor: number | null | undefined) => INTEIRO.format(valor || 0);
@@ -52,6 +66,24 @@ export const dataLocal = (iso: string) => {
 };
 
 export const diaMes = (iso: string) => DIA_MES.format(dataLocal(iso));
+
+const MES_CURTO = new Intl.DateTimeFormat('pt-BR', { month: 'short' });
+
+/**
+ * "21 – 27 set", ou "29 set – 5 out" quando o intervalo vira o mês.
+ *
+ * Mês por extenso curto e não "21/09 – 27/09": é como ela fala da semana. Mora
+ * aqui, e não na tela da Semana, porque a mesma semana aparece também em
+ * Gastos -- e ali estava saindo em dd/mm, dois formatos pro mesmo intervalo.
+ */
+export const intervaloCurto = (inicio: string, fim: string) => {
+  if (!inicio || !fim) return '';
+  const mes = (iso: string) => MES_CURTO.format(dataLocal(iso)).replace('.', '');
+  const dia = (iso: string) => Number(iso.slice(8, 10));
+  return mes(inicio) === mes(fim)
+    ? `${dia(inicio)} – ${dia(fim)} ${mes(fim)}`
+    : `${dia(inicio)} ${mes(inicio)} – ${dia(fim)} ${mes(fim)}`;
+};
 
 export const diaDaSemana = (iso: string) =>
   DIA_SEMANA.format(dataLocal(iso)).replace('.', '').slice(0, 3);

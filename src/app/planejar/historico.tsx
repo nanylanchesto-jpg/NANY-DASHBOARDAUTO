@@ -27,7 +27,15 @@ import {
   type Pagamento,
   type VendaDoDia,
 } from '@/lib/dados';
-import { diaDaSemana, diaMes, dinheiro, hora, inteiro, quantidade } from '@/lib/formato';
+import {
+  diaDaSemana,
+  diaMes,
+  dinheiro,
+  dinheiroSemSinal,
+  hora,
+  inteiro,
+  quantidade,
+} from '@/lib/formato';
 import { hojeDaSerie, somarDias } from '@/lib/periodo';
 
 /**
@@ -158,7 +166,7 @@ function Dia({
           aberto e fechado, e a seta que diz isso pro olho não é lida. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${nome}: vendas ${dinheiro(resumo.receita)}, ${palavra} ${dinheiro(resumo.lucro_vendas)}`}
+        accessibilityLabel={`${nome}: vendas ${dinheiro(resumo.receita)}, ${palavra} ${dinheiroSemSinal(resumo.lucro_vendas)}`}
         aria-expanded={aberto}
         onPress={onAlternar}
         style={({ pressed }) => [estilos.cabecalho, { opacity: pressed ? 0.6 : 1 }]}>
@@ -182,7 +190,7 @@ function Dia({
               tom={prejuizo ? 'negativo' : 'textoFraco'}
               negrito={prejuizo}
               style={NUMERAL}>
-              {palavra} {dinheiro(resumo.lucro_vendas)}
+              {palavra} {dinheiroSemSinal(resumo.lucro_vendas)}
             </Txt>
           </Linha>
         </View>

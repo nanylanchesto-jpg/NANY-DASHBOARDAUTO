@@ -29,7 +29,7 @@ navegador, que é o que abre a câmera direto no Android e no iOS.
 
 ```bash
 npx supabase link --project-ref SEU_REF
-npx supabase db push                      # aplica as 4 migrations
+npx supabase db push                      # aplica as 6 migrations
 npx supabase functions deploy ler-notinha
 npx supabase secrets set GEMINI_API_KEY=sua-chave
 ```
@@ -49,27 +49,41 @@ No Vercel, cadastre as mesmas duas em *Settings → Environment Variables*.
 ### 3. Primeiro uso
 
 1. Criar conta no app (e-mail e senha).
-2. Aba **Cadastro** → cadastrar "Hot-dog" a R$ 10,00 e "Suco" a R$ 5,00.
-3. Aba **Notinha** → fotografar uma nota do mercado. Os ingredientes entram com
-   preço e quantidade; confira antes de salvar.
-4. Voltar ao **Cadastro** → abrir o hot-dog e montar a receita (1 pão, 1
+2. **Planejar → Produtos** → cadastrar "Hot-dog" a R$ 12,00 e "Suco" a R$ 6,00.
+3. **Planejar → Compras** → fotografar uma nota do mercado. Os ingredientes
+   entram com preço e quantidade; confira antes de salvar.
+4. Voltar a **Produtos** → abrir o hot-dog e montar a receita (1 pão, 1
    salsicha, 20 g de molho). É isso que faz o custo existir.
-5. Aba **Vender** → tocar no produto a cada venda.
-6. Aba **Hoje** → o fechamento e o gráfico.
+5. **Vender** → tocar nos produtos, escolher a forma de pagamento, finalizar.
+6. **Hoje** → quanto vendeu, quanto ganhou, o que pede atenção.
 
 O passo 4 é o que a maioria pula, e sem ele o lucro aparece igual ao preço
-cheio. O app avisa em cada produto sem receita, em vez de mostrar um número
-bonito e falso.
+cheio. O app avisa em Hoje e em Produtos, em vez de mostrar um número bonito e
+falso.
+
+Opcional, e é o que faz o Planejar valer: **Planejar → Metas** define quanto
+vender por dia, semana ou mês. Com uma meta ativa, a Hoje mostra quanto falta
+logo acima do botão Vender.
 
 ## Decisões que valem saber
 
 **Lucro e caixa são dois números diferentes, e os dois aparecem.** `lucro_vendas`
 é a receita menos o custo dos ingredientes que as vendas do dia consumiram — a
-margem do negócio. `caixa` é o que entrou de venda menos o que ela pagou de
-compra naquele dia. Num dia de feira o caixa afunda mesmo com a lanchonete
+margem do negócio. `caixa` é o que entrou de venda menos o que saiu do bolso
+naquele dia — compra do mercado e também gasto que não é ingrediente (gás,
+embalagem, taxa da feira). Num dia de feira o caixa afunda mesmo com a lanchonete
 vendendo bem, porque a compra cobre a semana. Mostrar só o caixa faria um dia
 normal parecer prejuízo; mostrar só a margem esconderia o aperto que ela sente
 de verdade.
+
+**Uma venda é um pedido, não um toque.** Ela junta 2 hot-dogs e 1 suco, escolhe
+Dinheiro, Pix ou Cartão e finaliza: sai uma linha em `vendas` por produto
+(preço e custo são fotografados por produto), todas com o mesmo `pedido`. O "N
+vendas" do dia conta `DISTINCT pedido`, então é o número de clientes atendidos,
+que é o que ela confere de cabeça. A forma de pagamento existe pra fechar a
+gaveta no fim do dia: quanto tem que ter em cédula, quanto caiu no Pix e quanto
+está na maquininha. Venda de antes desta versão fica com pedido e forma nulos,
+e o Histórico diz "Sem forma" em vez de inventar dinheiro.
 
 **Preço e custo da venda são fotografia, não referência.** `vendas` guarda o
 custo do momento em que a venda aconteceu. Quando a salsicha subir em novembro,
@@ -96,13 +110,16 @@ saldo na mesma transação.
 UTC, onde uma venda das 21h30 de sábado já é domingo. Tudo que fecha o dia passa
 por `public.dia_local()`.
 
-**As cores do gráfico foram calculadas, não escolhidas.** Verde para lucro e
-âmbar para custo era a ideia óbvia e reprovou: ΔE 5,6 no protan, ou seja, as
-duas partes da barra viram a mesma cor para a deficiência de visão de cor mais
-comum entre homens. O par em uso (`#C0611F` / `#1F8D5C` no claro, `#D97534` /
-`#2AAE74` no escuro) passa os seis testes de paleta. A cor nunca carrega a
-informação sozinha: legenda fixa, 2 px de fundo entre os segmentos e os valores
-escritos ao tocar a barra.
+**A cor é da lanchonete, e nenhuma informação depende dela.** Tomate, mostarda,
+creme, marrom e verde — a paleta que a dona reconhece como sua. Mas tomate
+contra verde é justamente o par que protanopia e deuteranopia confundem, e em
+luminosidade os dois quase empatam (1,23:1). Então o estado vem sempre escrito
+ou desenhado além da cor: o dia de prejuízo tem hachura E desce abaixo da linha
+de base, a barra de um produto no prejuízo é vazada, o `Aviso` tem ✓ / ✕ / !, e
+a palavra "prejuízo" fica ao lado do número. `npm run checa-paleta` mede os 82
+pares (7:1 pra texto, 4,5:1 pro placeholder, 3:1 pra contorno e barra) lendo os
+hex do próprio `theme.ts` — mas não mede matiz, e é por isso que nada acima
+pode ser removido.
 
 ## O que veio do Almoxá
 
@@ -132,8 +149,11 @@ Projeto Supabase `vllnhhwlblszkmcvtgno`, verificado contra o servidor em 17/09/2
 |---|---|
 | `npm run typecheck` | passa |
 | `npm run lint` | passa |
-| `npm run build:web` | passa — 4 rotas pré-renderizadas |
+| `npm run build:web` | passa — 13 rotas pré-renderizadas |
+| `npm run checa-paleta` | passa — 82 pares de contraste |
 | 5 migrations aplicadas | ✅ 7 tabelas e as RPCs respondendo |
+| 6ª migration (pedido, pagamento, metas, gastos) | **não aplicada** — rode `supabase/aplicar-pedido.sql` no SQL Editor antes de publicar |
+| 6ª migration testada | ✅ 144 verificações num Postgres real (PGlite), com negativos e 11 mutações adulteradas |
 | RLS e permissões | ✅ anônimo recusado nas 6 funções de leitura; `cota_leitura` fechada para todos |
 | `dia_local()` | ✅ devolveu a data civil correta, não a de UTC |
 | Cadastro sem confirmação de e-mail | ✅ `signUp` devolve sessão na hora |
@@ -151,17 +171,24 @@ Podem ser apagadas.
 
 ```
 src/
-  app/            telas (expo-router: Hoje, Vender, Notinha, Cadastro)
-  components/     ui.tsx (primitivas), grafico-dias.tsx, tela-login.tsx
+  app/
+    _layout.tsx   as 3 abas (expo-router/ui) e o portão de login
+    index.tsx     Hoje
+    vender.tsx    Vender
+    planejar/     hub + metas, semana, lucro, histórico, compras, gastos,
+                  estoque, produtos (pilha própria)
+  components/     ui.tsx (primitivas), icone.tsx, grafico-barras.tsx, tela-login.tsx
   lib/
     notinha.ts    câmera → compressão → Edge Function
     dados.ts      tipos e hooks de consulta/gravação
+    periodo.ts    semana, mês, meta e plano de compra (funções puras)
     unidades.ts   unidade-base (espelha unidade_base()/fator_base() do banco)
     formato.ts    dinheiro, quantidade e data em pt-BR
   constants/
     theme.ts      cores, espaçamento, alvos de toque, paleta do gráfico
 supabase/
-  migrations/     4 migrations: base, compras/vendas, dashboard, registrar_compra
+  migrations/     6 migrations: base, compras/vendas, dashboard,
+                  registrar_compra, revenda, pedido/pagamento/metas/gastos
   functions/
     ler-notinha/  a leitura por IA (Deno)
 ```

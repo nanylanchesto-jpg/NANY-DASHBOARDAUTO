@@ -19,7 +19,7 @@ import {
 } from '@/components/ui';
 import { Espaco, Touch } from '@/constants/theme';
 import { useMetas, useParaComprar, useResumoPorDia, type ParaComprar } from '@/lib/dados';
-import { dataLocal, dinheiro, saldo } from '@/lib/formato';
+import { dinheiro, intervaloCurto, saldo } from '@/lib/formato';
 import {
   diasDaSemana,
   diasRestantes,
@@ -38,21 +38,6 @@ const SERIE = 31;
 const DIAS_DO_PLANO = 7;
 
 const NUMERAL: TextStyle = { fontVariant: ['tabular-nums'] };
-
-const MES = new Intl.DateTimeFormat('pt-BR', { month: 'short' });
-
-/**
- * "21 – 27 set", ou "29 set – 5 out" quando a semana vira o mês. Mês por
- * extenso curto e não "21/09 – 27/09": é como ela fala da semana.
- */
-function intervalo(inicio: string, fim: string) {
-  if (!inicio || !fim) return '';
-  const mes = (iso: string) => MES.format(dataLocal(iso)).replace('.', '');
-  const dia = (iso: string) => Number(iso.slice(8, 10));
-  return mes(inicio) === mes(fim)
-    ? `${dia(inicio)} – ${dia(fim)} ${mes(fim)}`
-    : `${dia(inicio)} ${mes(inicio)} – ${dia(fim)} ${mes(fim)}`;
-}
 
 function mensagem(falha: unknown, padrao: string) {
   return falha instanceof Error ? falha.message : padrao;
@@ -90,7 +75,7 @@ export default function Semana() {
             grande
             rotulo="Vendas"
             valor={dinheiro(soma.receita)}
-            legenda={intervalo(inicioDoPeriodo('semana', hoje), fimDoPeriodo('semana', hoje))}
+            legenda={intervaloCurto(inicioDoPeriodo('semana', hoje), fimDoPeriodo('semana', hoje))}
           />
           {metaSemana ? (
             <MetaDaSemana

@@ -739,7 +739,11 @@ export function Campo({
         ) : null}
         <TextInput
           ref={entrada}
-          placeholderTextColor={cores.textoFraco}
+          // `placeholder` e não `textoFraco`: com a tinta do texto digitado,
+          // o exemplo dentro do campo parecia valor já preenchido. Ver o token
+          // no theme.ts -- é a única tinta de texto abaixo de 7:1, e o
+          // checa-paleta cobra os 4,5:1 dela.
+          placeholderTextColor={cores.placeholder}
           // O `rotulo` acima é um <Text> IRMÃO do input: pro olho ele nomeia o
           // campo, mas pra quem usa leitor de tela os dois não têm relação
           // nenhuma -- o input é anunciado sem nome. Era o caso dos dois campos

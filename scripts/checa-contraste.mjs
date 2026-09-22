@@ -114,6 +114,8 @@ function razao(a, b) {
 }
 
 const TEXTO = 7;
+/** Só o `placeholder`: exemplo dentro do campo, não conteúdo. Piso da WCAG AA. */
+const DICA = 4.5;
 const GRAFICO = 3;
 
 let reprovou = 0;
@@ -152,6 +154,18 @@ for (const esquema of ['light', 'dark']) {
   for (const tom of ['texto', 'textoFraco', 'positivo', 'negativo', 'atencao']) {
     for (const [nome, sup] of superficies) checa(`${tom} / ${nome}`, c[tom], sup, TEXTO);
   }
+
+  console.log('\n  placeholder, 4,5:1 contra o fundo do campo');
+  // O `Campo` desenha sempre sobre `superficie`; ele não cai nas outras duas.
+  checa('placeholder / superficie', c.placeholder, c.superficie, DICA);
+  // E tem que ficar visivelmente MAIS CLARO que o texto digitado, senão o
+  // exemplo volta a parecer valor preenchido.
+  informa(
+    'placeholder / textoFraco',
+    c.placeholder,
+    c.textoFraco,
+    'o quanto o exemplo se afasta do texto de verdade',
+  );
 
   console.log('\n  texto sobre o próprio fundo, 7:1');
   checa('positivo / positivoFraco', c.positivo, c.positivoFraco, TEXTO);

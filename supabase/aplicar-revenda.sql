@@ -6,8 +6,16 @@
 -- qualquer linha falhar, NADA e aplicado.
 --
 -- So esta migration, nao o banco inteiro: as anteriores ja estao
--- aplicadas no projeto. Para um banco novo, use aplicar-tudo.sql
--- primeiro e depois este arquivo.
+-- aplicadas no projeto. Para um banco novo, a ordem e:
+--   1. aplicar-tudo.sql
+--   2. migrations/20260917124000_fecha_leitura_para_anonimo.sql
+--   3. este arquivo
+--   4. aplicar-pedido.sql
+--
+-- O passo 2 NAO esta dentro do aplicar-tudo.sql (ele junta so as
+-- quatro primeiras migrations), e pular ele deixa as seis funcoes
+-- de leitura executaveis por visitante sem login -- que e
+-- exatamente o que aquela migration existe pra fechar.
 --
 -- Gerado de:
 --   20260918120000_revenda_e_custo_estimado.sql

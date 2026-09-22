@@ -51,6 +51,13 @@ type Paleta = {
   divisor: string;
   texto: string;
   textoFraco: string;
+  /**
+   * Texto do `placeholder`, e SÓ dele: 4,5:1 contra o branco do campo, não os
+   * 7:1 do resto. É a única exceção da regra de texto, e é de propósito --
+   * escrito no mesmo tom do valor digitado, o exemplo parecia campo já
+   * preenchido ("seu@email.com" no login, "0,00" no valor do gasto).
+   */
+  placeholder: string;
   /** Tomate. Preenchimento, ícone, indicador -- NÃO texto corrido. */
   marca: string;
   /** Ícone sobre `marca` (a aba ativa). */
@@ -93,6 +100,7 @@ export const Cores: Record<Esquema, Paleta> = {
     divisor: '#EADBC6',
     texto: '#2B211C',
     textoFraco: '#5C4A3F',
+    placeholder: '#866E5F',
     marca: '#D94A35',
     sobreMarca: '#FFFFFF',
     acao: '#F4BE45',
@@ -116,6 +124,7 @@ export const Cores: Record<Esquema, Paleta> = {
     divisor: '#3A2F29',
     texto: '#FFF7EA',
     textoFraco: '#D2C2B4',
+    placeholder: '#9C8778',
     marca: '#EE6A52',
     sobreMarca: '#1A1411',
     acao: '#F4BE45',

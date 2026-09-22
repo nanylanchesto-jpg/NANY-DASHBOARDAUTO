@@ -25,7 +25,7 @@ import {
   useVendasPorProduto,
   type ProdutoVendas,
 } from '@/lib/dados';
-import { dinheiro } from '@/lib/formato';
+import { dinheiro, dinheiroSemSinal } from '@/lib/formato';
 
 type Janela = '7' | '30';
 
@@ -93,7 +93,7 @@ export default function Lucro() {
             <Indicador
               grande
               rotulo={lucro < 0 ? 'Prejuízo' : 'Lucro'}
-              valor={dinheiro(lucro)}
+              valor={dinheiroSemSinal(lucro)}
               tom={tom}
               legenda={`de ${dinheiro(receita)} em vendas`}
             />
@@ -155,7 +155,7 @@ function LinhaDeProduto({ linha, teto }: { linha: ProdutoVendas; teto: number })
   return (
     <View
       accessible
-      accessibilityLabel={`${linha.nome}, ${prejuizo ? 'prejuízo' : 'lucro'} ${dinheiro(linha.lucro)}`}
+      accessibilityLabel={`${linha.nome}, ${prejuizo ? 'prejuízo' : 'lucro'} ${dinheiroSemSinal(linha.lucro)}`}
       style={{ gap: Espaco.sm }}>
       <Linha style={{ alignItems: 'baseline' }}>
         <Txt tipo="corpo" negrito numberOfLines={1} style={{ flex: 1 }}>
@@ -167,7 +167,7 @@ function LinhaDeProduto({ linha, teto }: { linha: ProdutoVendas; teto: number })
           </Txt>
         ) : null}
         <Txt tipo="corpo" negrito tom={prejuizo ? 'negativo' : 'texto'} style={NUMERAL}>
-          {dinheiro(linha.lucro)}
+          {dinheiroSemSinal(linha.lucro)}
         </Txt>
       </Linha>
       <View style={{ height: ALTURA_BARRA }}>

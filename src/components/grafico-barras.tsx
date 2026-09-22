@@ -25,7 +25,7 @@ import Svg, { Defs, Line, Path, Pattern, Rect, Text as SvgText } from 'react-nat
 
 import { Espaco } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
-import { diaDaSemana, diaMes, dinheiro } from '@/lib/formato';
+import { diaDaSemana, diaMes, dinheiroSemSinal } from '@/lib/formato';
 
 import { Linha, Txt } from './ui';
 
@@ -41,6 +41,12 @@ const MAX_ROTULOS = 7;
 const FAIXA_ROTULOS = 22;
 /** Espaço à direita reservado pro rótulo "meta", fora das barras. */
 const MARGEM_META = 36;
+/**
+ * Quanto o rótulo "meta" sobe acima da própria linha. Centrado nela, as letras
+ * ficavam POR CIMA dos tracejados e o conjunto virava um borrão no canto --
+ * dava pra ver nos três lugares que desenham a meta (Hoje, Semana, Metas).
+ */
+const SUBIDA_ROTULO_META = 6;
 /** Folga do anel de seleção em volta da barra. */
 const FOLGA_ANEL = 3;
 /** Lado do ladrilho da hachura. O traço ocupa ~44% dele: listra, não cinza. */
@@ -175,7 +181,7 @@ export function GraficoBarras({
           {foco === indiceHoje ? 'hoje' : diaDaSemana(pontoFoco.dia)}, {diaMes(pontoFoco.dia)}
         </Txt>
         <Txt tipo="secao" style={{ fontVariant: ['tabular-nums'] }}>
-          {dinheiro(valorFoco)}
+          {dinheiroSemSinal(valorFoco)}
         </Txt>
         {/* "lucro" / "prejuízo" escrito: o sinal de menos é fácil de não ver,
             e a cor não chega pra quem não distingue vermelho de verde. */}
@@ -284,8 +290,9 @@ export function GraficoBarras({
                 })}
 
                 {/* Meta por cima das barras, pra não sumir atrás delas. O
-                    rótulo mora na margem da direita, fora da área das barras:
-                    dentro, cobriria justamente a barra de hoje. */}
+                    rótulo mora na margem da direita, fora da área das barras
+                    (dentro, cobriria justamente a barra de hoje) e ACIMA da
+                    linha, nunca em cima dela. */}
                 {temMeta ? (
                   <>
                     <Line
@@ -299,7 +306,10 @@ export function GraficoBarras({
                     />
                     <SvgText
                       x={largura}
-                      y={base - meta * escala + 4}
+                      // Nunca acima do topo do desenho: com a meta no teto da
+                      // escala (meta maior que todos os dias), a linha nasce em
+                      // y=0 e o rótulo sairia cortado fora do SVG.
+                      y={Math.max(11, base - meta * escala - SUBIDA_ROTULO_META)}
                       textAnchor="end"
                       fontSize={12}
                       fontWeight="700"
@@ -344,7 +354,7 @@ export function GraficoBarras({
                     accessibilityRole="button"
                     accessibilityLabel={`${i === indiceHoje ? 'hoje, ' : ''}${diaDaSemana(
                       ponto.dia,
-                    )} ${diaMes(ponto.dia)}: ${palavra(v)} ${dinheiro(v)}`}
+                    )} ${diaMes(ponto.dia)}: ${palavra(v)} ${dinheiroSemSinal(v)}`}
                     onPress={() => setDiaEscolhido(i === escolhido ? null : ponto.dia)}
                     style={estilo}
                   />

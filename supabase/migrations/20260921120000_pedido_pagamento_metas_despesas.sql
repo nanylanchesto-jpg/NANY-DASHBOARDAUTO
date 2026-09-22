@@ -529,3 +529,32 @@ $$;
 
 REVOKE ALL ON FUNCTION public.vendas_do_dia(DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.vendas_do_dia(DATE) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 9. Fechar o TRUNCATE das tabelas antigas
+-- ---------------------------------------------------------------------------
+-- ACHADO TESTANDO ESTA MIGRATION NUM POSTGRES DE VERDADE: as seis tabelas de
+-- antes ainda davam TRUNCATE a `authenticated` E a `anon`. É o mesmo engano
+-- que a migration base documenta em `ingredientes` -- o Supabase roda
+-- `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES`, e as migrations antigas
+-- revogaram só INSERT/UPDATE/DELETE, e só de `authenticated`. Sobrou TRUNCATE,
+-- que ATRAVESSA a RLS: uma linha só apagaria as vendas de todas as contas, sem
+-- disparar gatilho nenhum e sem deixar rastro.
+--
+-- Não é alcançável hoje: o PostgREST não expõe TRUNCATE e nenhuma função do
+-- projeto monta SQL dinâmico. É defesa em profundidade, pela mesma razão da
+-- migration 20260917124000 -- o dia em que alguém escrever uma função nova com
+-- SQL montado em texto, o buraco já está fechado.
+--
+-- REFERENCES e TRIGGER vão junto: os dois deixam criar objeto que se prende às
+-- tabelas do dono (chave estrangeira apontando pra elas, gatilho rodando com o
+-- privilégio de quem escreveu), e a tela nunca precisou de nenhum dos dois.
+-- As duas tabelas novas desta migration já nasceram com `REVOKE ALL`.
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON
+  public.ingredientes,
+  public.produtos,
+  public.receita_itens,
+  public.compras,
+  public.compra_itens,
+  public.vendas
+FROM authenticated, anon;
