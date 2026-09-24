@@ -142,8 +142,6 @@ export default function Planejar() {
         <Divisor />
         <ItemLista icone="semana" titulo="Semana" onPress={() => router.push('/planejar/semana')} />
         <Divisor />
-        <ItemLista icone="lucro" titulo="Lucro" onPress={() => router.push('/planejar/lucro')} />
-        <Divisor />
         <ItemLista
           icone="compras"
           titulo="Compras"

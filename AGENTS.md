@@ -95,12 +95,22 @@ de acessibilidade vai em `aria-*` e não em `accessibilityState`: o
 react-native-web 0.21 descarta esse objeto sem avisar, e o RN 0.86 entende as
 duas formas.
 
-**São TRÊS abas, e a quarta não volta.** Hoje (olhar), Vender (fazer), Planejar
-(uma pilha com metas, semana, lucro, compras, gastos, estoque, produtos e
-histórico). O que não responde "quanto vendi / quanto ganhei / preciso vender
-agora / tem algo pedindo atenção" não fica na Hoje. `resetOnFocus` está
-DESLIGADO no Planejar de propósito: a conferência de uma nota lida pelo Gemini
-(que gasta cota) tem que sobreviver a uma ida ao Vender.
+**São QUATRO abas, e cada uma tem um verbo.** Hoje (olhar o dia), Vender
+(fazer), Painel (olhar o período) e Planejar (mexer: metas, semana, compras,
+gastos, estoque, produtos, histórico — numa pilha). Começou com três; o Painel
+entrou depois, a pedido da dona, e levou junto a tela Lucro, que deixou de
+existir no Planejar. A regra que sobreviveu às duas versões: o que não responde
+"quanto vendi / quanto ganhei / preciso vender agora / tem algo pedindo
+atenção" NÃO fica na Hoje. Cinco abas não cabem — em 360 px o rótulo quebra.
+
+`resetOnFocus` está DESLIGADO no Planejar de propósito: a conferência de uma
+nota lida pelo Gemini (que gasta cota) tem que sobreviver a uma ida ao Vender.
+
+**Uma mostarda por tela.** `Botao variante="primaria"` é a resposta pra "o que
+eu faço aqui?", e duas respostas não respondem nada. Por isso o atalho
+"Fotografar nota" é `secundaria` na Hoje e no Painel, mesmo sendo o que
+alimenta custo, estoque e gastos: no aperto da tarde, quem tem que gritar é o
+Vender.
 
 **"Hoje" vem do banco, nunca de `new Date()` na tela.** `hojeDaSerie()` lê o
 último dia da série de `resumo_por_dia`, que termina em `dia_local()`. Com o
@@ -120,9 +130,16 @@ A migration `20260921120000` (pedido, pagamento, metas, despesas) foi validada
 num Postgres de verdade — PGlite, fora do repositório, 144 verificações,
 incluindo os negativos (anônimo recusado, conta A não enxerga a B, estoque não
 volta em dobro no segundo "Desfazer") e 11 mutações adulteradas que o teste
-pegou. Mas **não foi aplicada no Supabase**: rode `supabase/aplicar-pedido.sql`
-no SQL Editor ANTES de publicar o app novo, senão Vender, Histórico, Metas e
-Gastos quebram (as RPCs e tabelas não existem lá).
+pegou. Ela **já foi aplicada** no projeto `vllnhhwlblszkmcvtgno` em 22/09/2026,
+pelo SQL Editor (`supabase/aplicar-pedido.sql`). Em outro banco, aplique ANTES
+de publicar o app: sem ela, Vender, Histórico, Metas e Gastos quebram, porque
+as RPCs e tabelas não existem.
+
+A Edge Function `ler-notinha` foi publicada em 22/09/2026 com o raciocínio do
+modelo desligado (`reasoning_effort: none`, ajustável pelo secret
+`GEMINI_ESFORCO`), teto de saída e orçamento de tempo. Medido contra a API de
+verdade: leitura boa em 3,2 s e 18,1 s (era 32 s); quando o Gemini congestiona
+— ~1 em 3 chamadas — o erro chega em ~78 s (era 146 s).
 
 Ainda não executados:
 

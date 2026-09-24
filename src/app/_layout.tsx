@@ -14,8 +14,12 @@ import { Espaco, Fonte, LarguraMax, Peso, Raio, Touch } from '@/constants/theme'
 import { useTema } from '@/hooks/use-tema';
 import { useSessao } from '@/lib/sessao';
 
-/** A pílula da aba ativa: larga o bastante pro ícone não encostar na borda. */
-const LARGURA_PILULA = 64;
+/**
+ * A pílula da aba ativa: larga o bastante pro ícone não encostar na borda, e
+ * não mais que isso -- com quatro abas num celular de 360 px, 56 px é o limite
+ * antes de uma pílula quase encostar na vizinha.
+ */
+const LARGURA_PILULA = 56;
 const ALTURA_PILULA = 32;
 
 /**
@@ -76,9 +80,12 @@ function Portao() {
 }
 
 /**
- * Três abas e nada mais: Hoje (olhar), Vender (fazer), Planejar (todo o
- * resto, numa pilha). Cada aba a mais na barra é um alvo menor e mais uma
- * palavra pra ela aprender.
+ * Quatro abas: Hoje (olhar), Vender (fazer), Painel (os gráficos) e Planejar
+ * (o administrativo, numa pilha).
+ *
+ * Começou com três, e o Painel entrou a pedido da dona. O custo é real e vale
+ * saber: cada aba a mais é um alvo menor no polegar e mais uma palavra pra
+ * aprender. Cinco não cabem -- em 360 px o rótulo já começaria a quebrar.
  *
  * O `<TabList>` tem que ser filho DIRETO de `<Tabs>`.
  *
@@ -124,6 +131,9 @@ function Abas() {
         </TabTrigger>
         <TabTrigger name="vender" href="/vender" asChild>
           <ItemDeAba icone="vender" rotulo="Vender" />
+        </TabTrigger>
+        <TabTrigger name="painel" href="/painel" asChild>
+          <ItemDeAba icone="painel" rotulo="Painel" />
         </TabTrigger>
         {/* `resetOnFocus` DESLIGADO de propósito (é a prop do `TabTrigger`
             instalado; conferido em `expo-router/build/ui/TabTrigger.d.ts`).
@@ -228,8 +238,8 @@ ItemDeAba.displayName = 'ItemDeAba';
 const estilos = StyleSheet.create({
   barra: {
     flexDirection: 'row',
-    // No desktop da apresentação, três abas esticadas em 1400 px viram menu
-    // de site; centradas e com largura de celular, continuam barra de app.
+    // No desktop da apresentação, as abas esticadas em 1400 px viram menu de
+    // site; centradas e com largura de celular, continuam barra de app.
     justifyContent: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: Espaco.sm,
@@ -237,7 +247,7 @@ const estilos = StyleSheet.create({
   },
   item: {
     flex: 1,
-    maxWidth: LarguraMax / 3,
+    maxWidth: LarguraMax / 4,
     minHeight: Touch.alvo,
     alignItems: 'center',
     justifyContent: 'center',

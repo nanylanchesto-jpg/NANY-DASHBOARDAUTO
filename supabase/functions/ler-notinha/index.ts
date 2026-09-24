@@ -241,15 +241,48 @@ Deno.serve(async (req) => {
     conteudo.push({ type: 'image_url', image_url: { url: arquivo.dataUrl } });
   }
 
-  const corpoGemini = JSON.stringify({
-    model: Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.6-flash',
-    messages: [
-      { role: 'system', content: PROMPT },
-      { role: 'user', content: conteudo },
-    ],
-    tools: [ferramenta],
-    tool_choice: { type: 'function', function: { name: 'registrar_compra' } },
-  });
+  /**
+   * PENSAMENTO DO MODELO DESLIGADO, e é daqui que sai a velocidade.
+   *
+   * Nos flash da família 3.x o "thinking" vem ligado por padrão: antes de
+   * responder, o modelo gasta tokens raciocinando, e isso é a maior fatia do
+   * tempo de uma leitura. A camada compatível-com-OpenAI expõe isso em
+   * `reasoning_effort`, e `none` desliga.
+   *
+   * Ler cupom não precisa de raciocínio longo: é transcrever o que está escrito
+   * e aplicar as regras do PROMPT. Quem confere o resultado é ela, na tela de
+   * conferência, que existe justamente porque a leitura pode errar.
+   *
+   * `GEMINI_ESFORCO` deixa voltar atrás sem publicar de novo: `low` traz um
+   * pouco de raciocínio, e qualquer outro valor (ex.: `padrao`) manda o pedido
+   * sem o campo, que é o comportamento de antes.
+   */
+  const ESFORCO = Deno.env.get('GEMINI_ESFORCO') ?? 'none';
+  const PEDE_ESFORCO = ESFORCO === 'none' || ESFORCO === 'low' || ESFORCO === 'medium';
+
+  /**
+   * Teto de saída. A resposta é UMA chamada de ferramenta com os itens da nota:
+   * 60 itens (o teto de `registrar_compra`) cabem folgados em 4096. Existe pra
+   * uma resposta que desande não ficar gerando até o timeout -- e não pra
+   * cortar nota grande, que truncada quebraria o JSON da ferramenta.
+   */
+  const MAX_SAIDA = 4096;
+
+  const montarCorpo = (comEsforco: boolean) =>
+    JSON.stringify({
+      model: Deno.env.get('GEMINI_MODEL') ?? 'gemini-3.6-flash',
+      messages: [
+        { role: 'system', content: PROMPT },
+        { role: 'user', content: conteudo },
+      ],
+      tools: [ferramenta],
+      tool_choice: { type: 'function', function: { name: 'registrar_compra' } },
+      max_tokens: MAX_SAIDA,
+      ...(comEsforco && PEDE_ESFORCO ? { reasoning_effort: ESFORCO } : {}),
+    });
+
+  let comEsforco = PEDE_ESFORCO;
+  let corpoGemini = montarCorpo(comEsforco);
 
   // RETRY, e ele é a diferença entre o app servir e não servir.
   //
@@ -270,16 +303,36 @@ Deno.serve(async (req) => {
   // A cota dela é debitada UMA vez, acima, não por tentativa: as tentativas são
   // a mesma leitura insistindo, não leituras novas.
   const TENTATIVAS = 4;
-  const TIMEOUT_MS = 35_000;
+  /**
+   * Orçamento de tempo, medido contra a API de verdade.
+   *
+   * Uma leitura que dá certo volta em ~30 s; o que passa muito disso não está
+   * lendo, está pendurado. Eram 35 s por tentativa e nenhum teto total, e o
+   * pior caso somava 146 s -- dois minutos e meio de "Lendo a nota…" pra no fim
+   * dizer que não deu. Com 20 s por tentativa e 75 s de teto, o pior caso cabe
+   * em pouco mais de um minuto e ela volta a decidir o que fazer.
+   *
+   * O teto é conferido ANTES de cada tentativa: começar uma que não caberia no
+   * prazo só adia a mensagem de erro.
+   */
+  const TIMEOUT_MS = 20_000;
+  const PRAZO_TOTAL_MS = 75_000;
+  const comecou = Date.now();
   let resposta: Response | null = null;
   let ultimaFalha = '';
 
   for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
+    const sobrando = PRAZO_TOTAL_MS - (Date.now() - comecou);
+    if (tentativa > 1 && sobrando < 3_000) {
+      ultimaFalha = `${ultimaFalha} (prazo esgotado)`;
+      break;
+    }
+
     // Timeout por tentativa: as falhas rápidas (503 em 2-4 s) precisam liberar
     // a vez pra próxima, e uma chamada pendurada não pode consumir o tempo de
     // execução da função inteira sem nunca deixar tentar de novo.
     const aborta = new AbortController();
-    const relogio = setTimeout(() => aborta.abort(), TIMEOUT_MS);
+    const relogio = setTimeout(() => aborta.abort(), Math.min(TIMEOUT_MS, Math.max(sobrando, 1)));
 
     try {
       const r = await fetch(
@@ -291,6 +344,16 @@ Deno.serve(async (req) => {
           signal: aborta.signal,
         },
       );
+
+      // 400 com `reasoning_effort` no corpo: modelo que não aceita o campo.
+      // Repete UMA vez sem ele, em vez de transformar uma opção de desempenho
+      // em leitura perdida -- a cota dela já foi debitada lá em cima.
+      if (r.status === 400 && comEsforco) {
+        console.error('Gemini 400 com reasoning_effort; repetindo sem', (await r.text()).slice(0, 200));
+        comEsforco = false;
+        corpoGemini = montarCorpo(false);
+        continue;
+      }
 
       if (r.ok || (r.status !== 503 && r.status < 500)) {
         resposta = r; // sucesso, ou erro que repetir não conserta

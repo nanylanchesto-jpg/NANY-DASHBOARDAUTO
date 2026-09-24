@@ -56,6 +56,8 @@ No Vercel, cadastre as mesmas duas em *Settings → Environment Variables*.
    salsicha, 20 g de molho). É isso que faz o custo existir.
 5. **Vender** → tocar nos produtos, escolher a forma de pagamento, finalizar.
 6. **Hoje** → quanto vendeu, quanto ganhou, o que pede atenção.
+7. **Painel** → os gráficos do período: vendas e lucro por dia, por produto e
+   quanto do que entrou foi embora em compra e gasto.
 
 O passo 4 é o que a maioria pula, e sem ele o lucro aparece igual ao preço
 cheio. O app avisa em Hoje e em Produtos, em vez de mostrar um número bonito e
@@ -152,14 +154,16 @@ Projeto Supabase `vllnhhwlblszkmcvtgno`, verificado contra o servidor em 17/09/2
 | `npm run build:web` | passa — 13 rotas pré-renderizadas |
 | `npm run checa-paleta` | passa — 82 pares de contraste |
 | 5 migrations aplicadas | ✅ 7 tabelas e as RPCs respondendo |
-| 6ª migration (pedido, pagamento, metas, gastos) | **não aplicada** — rode `supabase/aplicar-pedido.sql` no SQL Editor antes de publicar |
+| 6ª migration (pedido, pagamento, metas, gastos) | ✅ aplicada em 22/09/2026 pelo SQL Editor |
 | 6ª migration testada | ✅ 144 verificações num Postgres real (PGlite), com negativos e 11 mutações adulteradas |
 | RLS e permissões | ✅ anônimo recusado nas 6 funções de leitura; `cota_leitura` fechada para todos |
 | `dia_local()` | ✅ devolveu a data civil correta, não a de UTC |
 | Cadastro sem confirmação de e-mail | ✅ `signUp` devolve sessão na hora |
 | Edge Function `ler-notinha` | ✅ publicada; recusa sem login (401), recusa `dataUrl` que não seja `data:` (400) |
 | Cota por usuário | ✅ 31 requisições inválidas não consumiram nenhuma leitura |
-| Leitura de nota real pelo Gemini | **não testada** — falta `supabase secrets set GEMINI_API_KEY` |
+| Leitura de nota pelo Gemini | ✅ testada ponta a ponta em 22/09/2026: cupom lido certo (4 ingredientes, sacola excluída, embalagem convertida em unidade de uso) |
+| Tempo de leitura | 3,2 s e 18,1 s nas leituras boas, com o raciocínio do modelo desligado; era 32 s |
+| Congestionamento do Gemini | ~1 em 3 chamadas volta 503 mesmo com 4 tentativas; o erro chega em ~78 s (era 146 s) |
 | Edge Function type-checada | **não** — Deno não instalado; `deno check supabase/functions/ler-notinha/index.ts` |
 | Fluxo na mão da Nany | **não testado** — falta produto, receita e uma nota de verdade |
 

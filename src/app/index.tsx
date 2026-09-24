@@ -35,7 +35,7 @@ import {
   type Periodo,
   type Produto,
 } from '@/lib/dados';
-import { dataLocal, diaDaSemana, dinheiro, inteiro } from '@/lib/formato';
+import { dataLocal, diaDaSemana, dinheiro, dinheiroSemSinal, inteiro } from '@/lib/formato';
 import { hojeDaSerie, metaAtiva, somaPeriodo } from '@/lib/periodo';
 
 /**
@@ -96,8 +96,9 @@ export default function Hoje() {
             }}>
             {falha instanceof Error ? falha.message : 'Não consegui carregar os números.'}
           </Aviso>
-          {/* Sem os números ela ainda precisa conseguir vender. */}
+          {/* Sem os números ela ainda precisa conseguir vender e lançar nota. */}
           <BotaoVender />
+          <BotaoFotografarNota />
         </View>
       ) : carregando ? (
         <Carregando />
@@ -112,6 +113,7 @@ export default function Hoje() {
               />
             ) : null}
             <BotaoVender />
+            <BotaoFotografarNota />
           </View>
 
           <View style={{ paddingTop: Espaco.sm }}>
@@ -198,7 +200,7 @@ function Numeros({ dados }: { dados: Fechamento | null }) {
           <Indicador
             style={{ flex: 1 }}
             rotulo={lucro < 0 ? 'Prejuízo' : 'Lucro'}
-            valor={dinheiro(Math.abs(lucro))}
+            valor={dinheiroSemSinal(lucro)}
             tom={lucro > 0 ? 'positivo' : lucro < 0 ? 'negativo' : 'texto'}
           />
           <Indicador
@@ -286,6 +288,29 @@ function BotaoVender() {
   return (
     <Botao grande icone="vender" onPress={() => router.push('/vender')}>
       Vender
+    </Botao>
+  );
+}
+
+/**
+ * Atalho da foto da nota.
+ *
+ * A câmera é o que alimenta custo, estoque e gastos, e vivia três toques
+ * fundo (Planejar → Compras → Fotografar). Aqui ela fica à vista no lugar em
+ * que ela já olha várias vezes por dia.
+ *
+ * Secundária, e essa é a parte que não pode mudar: a mostarda é UMA por tela,
+ * e nesta tela ela é o Vender. Fotografar nota é coisa de fim de expediente,
+ * vender é coisa do balcão -- se as duas gritassem igual, a que importa no
+ * aperto da tarde deixaria de ser óbvia.
+ */
+function BotaoFotografarNota() {
+  return (
+    <Botao
+      variante="secundaria"
+      icone="camera"
+      onPress={() => router.push('/planejar/compras')}>
+      Fotografar nota
     </Botao>
   );
 }

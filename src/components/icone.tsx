@@ -100,6 +100,8 @@ const DESENHOS = {
   ],
   /** Seta subindo em degraus. */
   lucro: ['M3 17l6-6 4 4 8-8', 'M15 7h6v6'],
+  /** Barras de altura diferente, com a base: a aba do Painel. */
+  painel: ['M4 20h16', 'M7 20v-7', 'M12 20V6', 'M17 20v-4'],
   /** Nota de mercado, com o picote embaixo. */
   compras: [
     'M6 4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 21Z',
