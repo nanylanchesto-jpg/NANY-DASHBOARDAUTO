@@ -112,6 +112,22 @@ eu faço aqui?", e duas respostas não respondem nada. Por isso o atalho
 alimenta custo, estoque e gastos: no aperto da tarde, quem tem que gritar é o
 Vender.
 
+**A chuva de hot-dogs nunca atrasa um toque.** `ChuvaDeHotdogs` é sempre
+`pointerEvents: 'none'` e sempre desenhada POR CIMA de uma tela já pronta --
+nada espera a animação terminar. Ela some inteira pra quem liga "reduzir
+movimento" no sistema (`useAnimacaoReduzida`), e nesse caso a transição avisa
+`aoTerminar` na hora, senão a camada ficaria pendurada. Só `transform` e
+`opacity`, que não refazem layout no aparelho de entrada dela. E a espera com
+chuva mora SÓ na leitura da nota, que leva de 3 a 18 s medidos: nas esperas
+curtas, `Carregando` continua sendo o indicador de sempre.
+
+**O desenho (`hotdog.tsx`) é separado da animação (`chuva-de-hotdogs.tsx`).**
+Quem só quer a figura não carrega o Reanimated junto -- e o Reanimated 4 estoura
+ao ser importado onde o plugin de worklets não roda, o que derruba o módulo
+inteiro. O plugin vem do `babel-preset-expo` sozinho, porque
+`react-native-worklets` está instalado; não há `babel.config.js` no projeto e
+não precisa haver.
+
 **"Hoje" vem do banco, nunca de `new Date()` na tela.** `hojeDaSerie()` lê o
 último dia da série de `resumo_por_dia`, que termina em `dia_local()`. Com o
 relógio do celular adiantado, a semana dela viraria num dia diferente do que o

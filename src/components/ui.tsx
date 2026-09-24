@@ -34,12 +34,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Espaco, Fonte, LarguraMax, Peso, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 
+import { ChuvaDeHotdogs } from './chuva-de-hotdogs';
 import { Icone, type NomeIcone } from './icone';
 
 type Paleta = ReturnType<typeof useTema>['cores'];
 
 /** Altura do trilho da barra de meta. */
 const ALTURA_PROGRESSO = 12;
+
+/**
+ * Altura da área de espera com chuva. Alta o bastante pro hot-dog cruzar a
+ * faixa inteira e não parecer que sumiu no meio do caminho.
+ */
+const ALTURA_ESPERA = 260;
 
 // ---------------------------------------------------------------------------
 // Sombra
@@ -890,8 +897,34 @@ export function Vazio({
   );
 }
 
-export function Carregando() {
+/**
+ * Espera.
+ *
+ * `chuva` só onde a espera é LONGA e ocupa a tela inteira: a leitura da nota
+ * pelo Gemini leva de 3 a 18 segundos, e é ali que um indicador parado faz ela
+ * achar que travou. Numa seção pequena, a chuva seria um bicho de sete cabeças
+ * em cima de meia tela de conteúdo já carregado -- lá fica o indicador de
+ * sempre.
+ *
+ * Nos dois casos o nome acessível é o mesmo: quem não enxerga ouve
+ * "Carregando", nunca a decoração.
+ */
+export function Carregando({ chuva }: { chuva?: boolean }) {
   const { cores } = useTema();
+
+  if (chuva) {
+    return (
+      <View
+        accessible
+        accessibilityLabel="Carregando"
+        accessibilityRole="progressbar"
+        style={estilos.esperaGrande}>
+        <ChuvaDeHotdogs quantidade={5} altura={ALTURA_ESPERA} />
+        <ActivityIndicator color={cores.marca} />
+      </View>
+    );
+  }
+
   return (
     <View style={{ paddingVertical: Espaco.xxl, alignItems: 'center' }}>
       <ActivityIndicator color={cores.marca} accessibilityLabel="Carregando" />
@@ -1194,6 +1227,14 @@ const estilos = StyleSheet.create({
     minHeight: Touch.alvoSecundario,
     paddingHorizontal: Espaco.md,
     justifyContent: 'center',
+  },
+  esperaGrande: {
+    height: ALTURA_ESPERA,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // A chuva é uma camada absoluta: sem recorte, o hot-dog passaria por cima
+    // do conteúdo que está acima e abaixo da espera.
+    overflow: 'hidden',
   },
   vazio: {
     alignItems: 'center',

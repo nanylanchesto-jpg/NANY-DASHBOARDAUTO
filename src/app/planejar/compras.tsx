@@ -219,8 +219,12 @@ export default function Compras() {
       }
       rodape={rodape}>
       {lendo ? (
+        // A espera com chuva mora AQUI, e só aqui: a leitura pelo Gemini leva
+        // de 3 a 18 segundos medidos, e é a única tela do app em que ela fica
+        // parada olhando. Nas esperas curtas, um hot-dog caindo seria susto,
+        // não companhia.
         <Cartao style={{ gap: Espaco.sm, alignItems: 'center' }}>
-          <Carregando />
+          <Carregando chuva />
           <Txt tipo="secao" centro>
             Lendo a nota…
           </Txt>

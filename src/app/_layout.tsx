@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Tabs, TabList, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ChuvaDeHotdogs } from '@/components/chuva-de-hotdogs';
 import { Icone, type NomeIcone } from '@/components/icone';
 // Em `components/`, não em `app/`: dentro de `app/` o arquivo viraria a rota
 // `/login`, alcançável por URL e renderizada FORA das abas -- uma tela de
@@ -66,6 +67,18 @@ export default function Layout() {
 function Portao() {
   const { esquema, cores } = useTema();
   const { entrou, carregando } = useSessao();
+  // Chuva de boas-vindas SÓ quando ela acabou de entrar, nunca ao abrir o app
+  // com sessão salva: a cada abertura seria uma animação entre ela e o balcão.
+  const [chuvaDeEntrada, setChuvaDeEntrada] = useState(false);
+  const estavaFora = useRef(false);
+
+  useEffect(() => {
+    if (carregando) return;
+    if (entrou && estavaFora.current) setChuvaDeEntrada(true);
+    estavaFora.current = !entrou;
+  }, [entrou, carregando]);
+
+  const fimDaChuva = useCallback(() => setChuvaDeEntrada(false), []);
 
   if (carregando) {
     return <View style={{ flex: 1, backgroundColor: cores.fundo }} />;
@@ -75,6 +88,9 @@ function Portao() {
     <>
       <StatusBar style={esquema === 'dark' ? 'light' : 'dark'} />
       {entrou ? <Abas /> : <TelaLogin />}
+      {chuvaDeEntrada ? (
+        <ChuvaDeHotdogs modo="uma-vez" quantidade={7} aoTerminar={fimDaChuva} />
+      ) : null}
     </>
   );
 }
@@ -102,8 +118,40 @@ function Portao() {
 function Abas() {
   const { cores } = useTema();
   const inset = useSafeAreaInsets();
+  // Uma chuva por troca de aba. A CHAVE é o que remonta a animação: sem ela, ir
+  // de Hoje pra Painel e voltar reaproveitaria a camada já terminada e nada
+  // cairia na segunda vez.
+  const [troca, setTroca] = useState(0);
+  const [caindo, setCaindo] = useState(false);
+  // A primeira aba "ganha foco" na montagem, e isso não é troca: sem este
+  // guarda, a chuva das abas brigaria com a das boas-vindas no mesmo instante.
+  const montou = useRef(false);
+
+  const aoFocar = useCallback(() => {
+    if (!montou.current) {
+      montou.current = true;
+      return;
+    }
+    setTroca((n) => n + 1);
+    setCaindo(true);
+  }, []);
+
+  const fimDaChuva = useCallback(() => setCaindo(false), []);
 
   return (
+    <View style={{ flex: 1 }}>
+      {caindo ? (
+        // FORA do `<Tabs>`: ele percorre os próprios filhos pra achar a
+        // `TabList` e montar as rotas (ver o comentário acima), e um filho
+        // estranho no meio é risco desnecessário.
+        <ChuvaDeHotdogs
+          key={troca}
+          modo="uma-vez"
+          quantidade={4}
+          aoTerminar={fimDaChuva}
+          style={estilos.chuvaDeAba}
+        />
+      ) : null}
     <Tabs>
       {/* `minHeight: 0` + `flexShrink: 1` sobrescrevem o `flexShrink: 0` que o
           próprio TabSlot põe no contêiner das telas e na tela focada. Sem isso,
@@ -127,13 +175,13 @@ function Abas() {
           },
         ]}>
         <TabTrigger name="hoje" href="/" asChild>
-          <ItemDeAba icone="hoje" rotulo="Hoje" />
+          <ItemDeAba icone="hoje" rotulo="Hoje" aoFocar={aoFocar} />
         </TabTrigger>
         <TabTrigger name="vender" href="/vender" asChild>
-          <ItemDeAba icone="vender" rotulo="Vender" />
+          <ItemDeAba icone="vender" rotulo="Vender" aoFocar={aoFocar} />
         </TabTrigger>
         <TabTrigger name="painel" href="/painel" asChild>
-          <ItemDeAba icone="painel" rotulo="Painel" />
+          <ItemDeAba icone="painel" rotulo="Painel" aoFocar={aoFocar} />
         </TabTrigger>
         {/* `resetOnFocus` DESLIGADO de propósito (é a prop do `TabTrigger`
             instalado; conferido em `expo-router/build/ui/TabTrigger.d.ts`).
@@ -151,10 +199,11 @@ function Abas() {
             (`fork/native-stack/createNativeStackNavigator.js`) -- o mesmo
             gesto do app nativo. */}
         <TabTrigger name="planejar" href="/planejar" asChild resetOnFocus={false}>
-          <ItemDeAba icone="planejar" rotulo="Planejar" />
+          <ItemDeAba icone="planejar" rotulo="Planejar" aoFocar={aoFocar} />
         </TabTrigger>
       </TabList>
     </Tabs>
+    </View>
   );
 }
 
@@ -169,10 +218,17 @@ function Abas() {
  */
 const ItemDeAba = forwardRef<
   View,
-  TabTriggerSlotProps & { icone: NomeIcone; rotulo: string }
->(({ icone, rotulo, isFocused, ...props }, ref) => {
+  TabTriggerSlotProps & { icone: NomeIcone; rotulo: string; aoFocar?: () => void }
+>(({ icone, rotulo, isFocused, aoFocar, ...props }, ref) => {
   const { cores } = useTema();
   const ativo = Boolean(isFocused);
+
+  // Avisa quando esta aba PASSA a ser a ativa. No efeito, e não no `onPress`:
+  // assim a chuva também acontece quando a troca vem de dentro de uma tela
+  // (o "Vender" da Hoje, o "Ver" do aviso de produto sem custo).
+  useEffect(() => {
+    if (ativo) aoFocar?.();
+  }, [ativo, aoFocar]);
 
   return (
     <Pressable
@@ -244,6 +300,11 @@ const estilos = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: Espaco.sm,
     paddingHorizontal: Espaco.sm,
+  },
+  chuvaDeAba: {
+    // Acima das telas, abaixo de nada: a barra de abas continua tocável
+    // porque a camada não recebe toque (`pointerEvents` none no componente).
+    zIndex: 10,
   },
   item: {
     flex: 1,
