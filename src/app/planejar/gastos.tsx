@@ -238,6 +238,7 @@ function ListaDeGastos({
                   variante="perigo"
                   icone="fechar"
                   rotuloAcessivel={`Remover ${despesa.descricao}, ${dinheiro(despesa.valor)}, ${quando}`}
+                  confirmar="Remover?"
                   ocupado={apagar.isPending && apagar.variables === despesa.id}
                   style={QUADRADO}
                   onPress={async () => {

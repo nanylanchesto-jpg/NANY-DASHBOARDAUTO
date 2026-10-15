@@ -199,6 +199,9 @@ export default function Planejar() {
         icone="sair"
         ocupado={saindo}
         rotuloAcessivel="Sair da conta"
+        // Pra voltar ela precisa da senha; sair sem querer no meio do dia é
+        // ficar sem registrar venda até lembrar dela.
+        confirmar="Sair mesmo? Vai pedir a senha"
         onPress={aoSair}
         style={{ marginTop: Espaco.xl, alignSelf: 'center', paddingHorizontal: Espaco.xl }}>
         Sair

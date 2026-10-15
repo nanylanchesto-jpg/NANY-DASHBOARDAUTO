@@ -480,9 +480,10 @@ export function Botao({
   desabilitado,
   style,
   rotuloAcessivel,
+  confirmar,
 }: {
   children: ReactNode;
-  onPress: () => void;
+  onPress: () => void | Promise<unknown>;
   /**
    * `primaria` é UMA por tela: a mostarda é a resposta pra "o que eu faço
    * aqui?", e duas mostardas não respondem nada.
@@ -503,9 +504,45 @@ export function Botao({
    * repassava `accessibilityLabel` nenhum.
    */
   rotuloAcessivel?: string;
+  /**
+   * Pede um segundo toque antes de agir, mostrando este texto no lugar do
+   * rótulo por alguns segundos. Pra ação que não tem volta (desfazer nota,
+   * apagar produto, sair da conta): um toque sem querer no balcão não pode
+   * custar dado. Dois toques e não `Alert.alert`, que no navegador não faz
+   * nada -- e é no Chrome do celular que ela usa o app.
+   */
+  confirmar?: string;
 }) {
   const { cores } = useTema();
   const travado = Boolean(ocupado || desabilitado);
+  const [pedindo, setPedindo] = useState(false);
+
+  useEffect(() => {
+    if (!pedindo) return;
+    const relogio = setTimeout(() => setPedindo(false), 4000);
+    return () => clearTimeout(relogio);
+  }, [pedindo]);
+
+  // `ocupado` só trava no render seguinte: dois toques rápidos chegavam os dois
+  // e gravavam a nota (ou o gasto) duas vezes, com o estoque somado em dobro.
+  // Enquanto a promessa do toque anterior não volta, o próximo é ignorado.
+  const emCurso = useRef(false);
+
+  function aoTocar() {
+    if (emCurso.current) return;
+    if (confirmar && !pedindo) {
+      setPedindo(true);
+      return;
+    }
+    setPedindo(false);
+    const retorno = onPress();
+    if (retorno instanceof Promise) {
+      emCurso.current = true;
+      retorno.finally(() => {
+        emCurso.current = false;
+      });
+    }
+  }
 
   const visual = {
     primaria: {
@@ -531,7 +568,9 @@ export function Botao({
 
   // Com o spinner no lugar do texto, o nome visível some; o leitor de tela
   // continua sabendo que botão é esse.
-  const nome = rotuloAcessivel ?? (typeof children === 'string' ? children : undefined);
+  const nome = pedindo
+    ? confirmar
+    : (rotuloAcessivel ?? (typeof children === 'string' ? children : undefined));
 
   return (
     <Pressable
@@ -541,7 +580,7 @@ export function Botao({
       // `disabled` e não só `onPress={undefined}`: é ele que o RN traduz pra
       // estado "indisponível" no leitor de tela e `aria-disabled` no web.
       disabled={travado}
-      onPress={onPress}
+      onPress={aoTocar}
       style={({ pressed }) => [
         estilos.botao,
         grande ? estilos.botaoGrande : null,
@@ -556,9 +595,24 @@ export function Botao({
           transform: [{ scale: pressed && !travado ? 0.98 : 1 }],
         },
         style,
+        // O botão quadrado de ícone (✕) tem largura fixa; a pergunta precisa
+        // de espaço pra caber escrita.
+        pedindo ? { width: 'auto', paddingHorizontal: Espaco.md } : null,
       ]}>
       {ocupado ? (
         <ActivityIndicator size="small" color={visual.texto} />
+      ) : pedindo ? (
+        <Text
+          numberOfLines={2}
+          style={{
+            color: visual.texto,
+            fontSize: grande ? 20 : Fonte.corpo,
+            fontWeight: Peso.pesado,
+            textAlign: 'center',
+            flexShrink: 1,
+          }}>
+          {confirmar}
+        </Text>
       ) : (
         <>
           {icone ? (

@@ -220,10 +220,28 @@ function invalidarMovimento(qc: QueryClient) {
   return Promise.all(raizes.map((raiz) => qc.invalidateQueries({ queryKey: [raiz] })));
 }
 
+/**
+ * Erro do Supabase em português. As mensagens que as funções do banco levantam
+ * (`RAISE EXCEPTION`) já vêm prontas e passam direto; o que não vem é o erro de
+ * rede ("Failed to fetch"), o de sessão vencida e o das restrições, que chegavam
+ * à tela em inglês de banco ("duplicate key value violates unique constraint").
+ */
+function falhaDoBanco(error: { message: string; code?: string }): Error {
+  if (/fetch|network/i.test(error.message)) {
+    return new Error('Sem internet. Confira a conexão e tente de novo.');
+  }
+  if (/jwt/i.test(error.message) || error.code === 'PGRST301') {
+    return new Error('Sessão expirada. Saia e entre de novo.');
+  }
+  if (error.code === '23505') return new Error('Já existe um cadastro com esse nome.');
+  if (error.code === '23514') return new Error('Algum valor ficou inválido. Confira os campos.');
+  return new Error(error.message);
+}
+
 /** Desempacota um RPC, transformando erro do PostgREST em Error com a mensagem do banco. */
 async function rpc<T>(nome: string, argumentos?: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(nome, argumentos);
-  if (error) throw new Error(error.message);
+  if (error) throw falhaDoBanco(error);
   return data as T;
 }
 
@@ -282,7 +300,7 @@ export function useIngredientes() {
         .from('ingredientes')
         .select('id, nome, unidade, estoque_base, custo_base, created_at')
         .order('nome');
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
       return (data ?? []) as Ingrediente[];
     },
   });
@@ -297,7 +315,7 @@ export function useReceita(produtoId: string | null) {
         .from('receita_itens')
         .select('id, ingrediente_id, quantidade_base, ingredientes(nome, unidade, custo_base)')
         .eq('produto_id', produtoId!);
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
       return (data ?? []) as unknown as ItemReceita[];
     },
   });
@@ -337,7 +355,7 @@ export function useSalvarProduto() {
               : { custo_estimado: produto.custo_estimado }),
           })
           .eq('id', produto.id);
-        if (error) throw new Error(error.message);
+        if (error) throw falhaDoBanco(error);
         return produto.id;
       }
       const { data, error } = await supabase
@@ -351,7 +369,7 @@ export function useSalvarProduto() {
         })
         .select('id')
         .single();
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
       return (data as { id: string }).id;
     },
     onSuccess: () => invalidarMovimento(qc),
@@ -403,7 +421,7 @@ export function useApagarProduto() {
         if (error.code === '23503') {
           throw new Error('Esse produto já tem venda registrada. Desative em vez de apagar.');
         }
-        throw new Error(error.message);
+        throw falhaDoBanco(error);
       }
     },
     onSuccess: () => invalidarMovimento(qc),
@@ -419,7 +437,7 @@ export function useSalvarIngrediente() {
           .from('ingredientes')
           .update({ nome: ingrediente.nome.trim(), unidade: ingrediente.unidade })
           .eq('id', ingrediente.id);
-        if (error) throw new Error(error.message);
+        if (error) throw falhaDoBanco(error);
         return ingrediente.id;
       }
       const { data, error } = await supabase
@@ -443,7 +461,7 @@ export function useSalvarIngrediente() {
         if (error.code === '23514') {
           throw new Error('Nome inválido: use de 1 a 120 caracteres.');
         }
-        throw new Error(error.message);
+        throw falhaDoBanco(error);
       }
       return (data as { id: string }).id;
     },
@@ -465,7 +483,7 @@ export function useSalvarItemReceita() {
         // em vez de atualizar a linha que já existe.
         { onConflict: 'produto_id,ingrediente_id' },
       );
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
     },
     onSuccess: (_dados, item) => {
       qc.invalidateQueries({ queryKey: chaves.receita(item.produto_id) });
@@ -479,7 +497,7 @@ export function useApagarItemReceita() {
   return useMutation({
     mutationFn: async ({ id }: { id: string; produto_id: string }) => {
       const { error } = await supabase.from('receita_itens').delete().eq('id', id);
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
     },
     onSuccess: (_dados, item) => {
       qc.invalidateQueries({ queryKey: chaves.receita(item.produto_id) });
@@ -560,7 +578,7 @@ export function useMetas() {
     queryKey: chaves.metas,
     queryFn: async () => {
       const { data, error } = await supabase.from('metas').select('periodo, valor');
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
       return (data ?? []) as Meta[];
     },
   });
@@ -578,7 +596,7 @@ export function useSalvarMeta() {
         .upsert({ user_id: await donaAtual(), periodo, valor }, { onConflict: 'user_id,periodo' });
       if (error) {
         if (error.code === '23514') throw new Error('A meta precisa ser maior que zero.');
-        throw new Error(error.message);
+        throw falhaDoBanco(error);
       }
     },
     // Meta não entra em conta nenhuma do banco: só a lista dela muda.
@@ -592,7 +610,7 @@ export function useApagarMeta() {
     // Só o período no filtro: a RLS já limita o DELETE às metas desta conta.
     mutationFn: async (periodo: Periodo) => {
       const { error } = await supabase.from('metas').delete().eq('periodo', periodo);
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: chaves.metas }),
   });
@@ -615,7 +633,7 @@ export function useDespesas(limite = 60) {
         .order('dia', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limite);
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
       return (data ?? []) as Despesa[];
     },
   });
@@ -651,7 +669,7 @@ export function useSalvarDespesa() {
         if (error.code === '23514') {
           throw new Error('Descreva o gasto (até 120 letras) e use um valor maior que zero.');
         }
-        throw new Error(error.message);
+        throw falhaDoBanco(error);
       }
       return (data as { id: string }).id;
     },
@@ -664,7 +682,7 @@ export function useApagarDespesa() {
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('despesas').delete().eq('id', id);
-      if (error) throw new Error(error.message);
+      if (error) throw falhaDoBanco(error);
     },
     onSuccess: () => invalidarMovimento(qc),
   });

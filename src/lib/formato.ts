@@ -118,3 +118,26 @@ export const hojeISO = () => {
   const dia = String(agora.getDate()).padStart(2, '0');
   return `${agora.getFullYear()}-${mes}-${dia}`;
 };
+
+/** "2026-10-09" -> "09/10/2026". Vazio continua vazio. */
+export const dataBr = (iso: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso;
+
+/**
+ * "9/10/2026", "09/10/26" ou "09-10-2026" -> "2026-10-09"; null se não for uma
+ * data de verdade (31/02, 15/13).
+ *
+ * Existe porque o banco lê "10/09/2026" como MÊS/dia (DateStyle MDY): a nota de
+ * 10 de setembro entrava em 9 de outubro sem erro nenhum.
+ */
+export const dataDeTexto = (texto: string): string | null => {
+  const partes = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(texto.trim());
+  if (!partes) return null;
+  const [, d, m, a] = partes;
+  const ano = a.length === 2 ? 2000 + Number(a) : Number(a);
+  const data = new Date(ano, Number(m) - 1, Number(d));
+  if (data.getFullYear() !== ano || data.getMonth() !== Number(m) - 1 || data.getDate() !== Number(d)) {
+    return null;
+  }
+  return `${ano}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+};

@@ -421,6 +421,7 @@ function LinhaDePedido({
             onPress={onDesfazer}
             ocupado={ocupado}
             rotuloAcessivel={`Desfazer venda das ${quando}, ${dinheiro(pedido.total)}`}
+            confirmar="Desfazer mesmo?"
             style={estilos.desfazer}>
             Desfazer
           </Botao>

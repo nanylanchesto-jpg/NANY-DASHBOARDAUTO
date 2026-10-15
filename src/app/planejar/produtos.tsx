@@ -312,6 +312,7 @@ function EditorDeProduto({
       {alterado ? (
         <Botao
           ocupado={salvandoDados}
+          desabilitado={!nome.trim() || numeroDeTexto(preco) <= 0}
           onPress={async () => {
             setErroDados(null);
             try {
@@ -364,6 +365,7 @@ function EditorDeProduto({
           variante="perigo"
           icone="lixo"
           rotuloAcessivel={`Apagar ${produto.nome}`}
+          confirmar="Apagar mesmo?"
           ocupado={apagar.isPending}
           style={{ minHeight: Touch.alvoSecundario, paddingHorizontal: Espaco.md }}
           onPress={async () => {

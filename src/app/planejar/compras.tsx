@@ -17,7 +17,7 @@ import {
 import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import { useCancelarCompra, useHistoricoCompras, useSalvarCompra } from '@/lib/dados';
-import { diaMes, dinheiro, numeroDeTexto } from '@/lib/formato';
+import { dataBr, dataDeTexto, diaMes, dinheiro, hojeISO, numeroDeTexto } from '@/lib/formato';
 import {
   escolherDaGaleria,
   fotografarNotinha,
@@ -110,7 +110,7 @@ export default function Compras() {
       const lida = await lerNotinha(novas);
       setLinhas(lida.itens.map(paraEditavel));
       setFornecedor(lida.fornecedor);
-      setData(lida.data);
+      setData(dataBr(lida.data));
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não consegui ler a nota.');
     }
@@ -150,8 +150,13 @@ export default function Compras() {
       setErro('Nenhum item com nome e quantidade.');
       return;
     }
+    const dia = data.trim() ? dataDeTexto(data) : '';
+    if (dia === null || (dia && dia > hojeISO())) {
+      setErro('Data inválida. Use dia/mês/ano, ex.: 09/10/2026 — ou deixe vazio para hoje.');
+      return;
+    }
     try {
-      await salvar.mutateAsync({ fornecedor, data, itens: itensValidos, origem: 'foto' });
+      await salvar.mutateAsync({ fornecedor, data: dia, itens: itensValidos, origem: 'foto' });
       setSalvo(`${itens(itensValidos.length)} no estoque · ${dinheiro(total)}`);
       recomecar();
     } catch (falha) {
@@ -246,13 +251,15 @@ export default function Compras() {
             placeholder="Opcional"
           />
           <Campo
-            rotulo="Data (AAAA-MM-DD)"
+            rotulo="Data da compra"
             value={data}
             onChangeText={setData}
             // Nota sem data legível entra no dia de hoje, decidido pelo banco.
-            placeholder="Vazio = hoje"
+            placeholder="dd/mm/aaaa (vazio = hoje)"
             autoCapitalize="none"
-            inputMode="numeric"
+            // `numeric` no Android não tem a barra; `text` deixa digitar "09/10/2026".
+            inputMode="text"
+            maxLength={10}
           />
 
           {linhas.length === 0 ? (
@@ -464,7 +471,8 @@ function Recentes({
                       aqui o erro caro é o toque sem querer. */}
                   <Botao
                     variante="perigo"
-                    rotuloAcessivel={`Desfazer compra ${nome}, ${diaMes(compra.comprada_em)}, ${dinheiro(compra.total)}`}
+                    confirmar="Desfazer mesmo?"
+                    rotuloAcessivel={`Desfazer compra${nome}, ${diaMes(compra.comprada_em)}, ${dinheiro(compra.total)}`}
                     style={{ minHeight: Touch.alvoSecundario, paddingHorizontal: Espaco.md }}
                     ocupado={cancelar.isPending && cancelar.variables === compra.id}
                     onPress={async () => {
