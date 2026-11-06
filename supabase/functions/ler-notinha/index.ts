@@ -16,6 +16,10 @@
  *  - Pede `unidade` junto da quantidade. Numa loja "2" é sempre 2 peças; numa
  *    lanchonete "2" pode ser 2 kg de salsicha ou 2 pacotes de pão, e sem a
  *    unidade o estoque erra por mil.
+ *  - Pede o TOTAL impresso. Desde que o app deixou de lançar ingrediente por
+ *    ingrediente, o que ela grava é um gasto só, com o valor da nota -- e o
+ *    total impresso é o que saiu do bolso, sacola e desconto incluídos. A
+ *    soma dos itens fica de reserva pra nota em que o total não sai legível.
  *  - Pede `fornecedor` e `data` da nota. Ela fotografa a nota de ontem hoje, e
  *    o fechamento do dia tem que lançar a despesa no dia certo (`comprada_em`).
  *
@@ -82,6 +86,12 @@ const ferramenta = {
           type: 'string',
           description: 'Data da compra no formato AAAA-MM-DD. Vazio se não aparecer na nota.',
         },
+        total: {
+          type: 'number',
+          description:
+            'Valor TOTAL pago, como impresso na nota ("TOTAL", "VALOR A PAGAR"), já com ' +
+            'descontos. Em reais decimais. 0 se não aparecer.',
+        },
         itens: {
           type: 'array',
           items: {
@@ -120,7 +130,7 @@ const ferramenta = {
           },
         },
       },
-      required: ['fornecedor', 'data', 'itens'],
+      required: ['fornecedor', 'data', 'total', 'itens'],
       additionalProperties: false,
     },
   },
@@ -139,6 +149,8 @@ Regras:
 - Ignore linhas que não são ingrediente: sacola, desconto, troco, taxa, total da nota.
 - Nome limpo e curto, do jeito que ela chamaria no balcão ("Pão", "Salsicha", "Molho").
 - Nunca invente preço: se não houver preço na nota, use 0.
+- Em "total", o valor final pago impresso na nota (sacola e desconto INCLUÍDOS, ao
+  contrário dos itens). Se houver mais de uma foto da mesma nota, é um total só.
 - Sempre chame registrar_compra, mesmo que encontre um único item.`;
 
 const CORS = {
@@ -234,7 +246,7 @@ Deno.serve(async (req) => {
   const conteudo: unknown[] = [
     {
       type: 'text',
-      text: 'Esta é a nota/cupom da compra de ingredientes. Liste tudo que foi comprado.',
+      text: 'Esta é a nota/cupom de uma compra. Leia o total pago e liste o que foi comprado.',
     },
   ];
   for (const arquivo of validado.data.arquivos) {
@@ -402,7 +414,7 @@ Deno.serve(async (req) => {
     choices?: { message?: { tool_calls?: { function?: { arguments?: string } }[] } }[];
   };
   const bruto = payload.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-  if (!bruto) return erro('Nenhum ingrediente foi identificado na nota.', 422);
+  if (!bruto) return erro('Não achei os valores nessa nota. Tente uma foto mais nítida.', 422);
 
   let lido: unknown;
   try {
@@ -415,6 +427,7 @@ Deno.serve(async (req) => {
     .object({
       fornecedor: z.string().default(''),
       data: z.string().default(''),
+      total: z.coerce.number().catch(0),
       itens: z.array(
         z.object({
           nome: z.string().default(''),
@@ -444,7 +457,18 @@ Deno.serve(async (req) => {
       observacao: item.observacao.trim().slice(0, 160),
     }));
 
-  if (itens.length === 0) return erro('Nenhum ingrediente foi identificado na nota.', 422);
+  // Teto de R$ 100 mil: um total maior que isso numa nota de lanchonete é
+  // leitura errada (código de barras, CNPJ), não compra.
+  const total =
+    Number.isFinite(saida.data.total) && saida.data.total > 0 && saida.data.total < 100_000
+      ? Number(saida.data.total.toFixed(2))
+      : 0;
+
+  // Nota com total legível e itens ilegíveis ainda serve: o que ela grava é o
+  // total.
+  if (itens.length === 0 && total === 0) {
+    return erro('Não achei os valores nessa nota. Tente uma foto mais nítida.', 422);
+  }
 
   // Data só passa se for uma AAAA-MM-DD de verdade e não estiver no futuro: o
   // modelo às vezes devolve a data de validade do produto ou inventa o ano, e
@@ -454,5 +478,5 @@ Deno.serve(async (req) => {
     ? saida.data.data
     : '';
 
-  return json({ fornecedor: saida.data.fornecedor.trim().slice(0, 160), data, itens });
+  return json({ fornecedor: saida.data.fornecedor.trim().slice(0, 160), data, total, itens });
 });

@@ -22,6 +22,7 @@ import {
   useFechamento,
   useResumoPorDia,
   useVendasDoDia,
+  lucroDe,
   type DiaResumo,
   type Fechamento,
   type Pagamento,
@@ -156,7 +157,9 @@ function Dia({
   const { cores } = useTema();
   const dia = resumo.dia.slice(0, 10);
   const nome = `${ehHoje ? 'hoje' : diaDaSemana(dia)}, ${diaMes(dia)}`;
-  const prejuizo = resumo.lucro_vendas < 0;
+  // Lucro do dia = vendas − gastos do dia, a mesma conta da Hoje.
+  const lucro = lucroDe(resumo);
+  const prejuizo = lucro < 0;
   const vendas = resumo.atendimentos;
   const palavra = prejuizo ? 'prejuízo' : 'lucro';
 
@@ -166,7 +169,7 @@ function Dia({
           aberto e fechado, e a seta que diz isso pro olho não é lida. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${nome}: vendas ${dinheiro(resumo.receita)}, ${palavra} ${dinheiroSemSinal(resumo.lucro_vendas)}`}
+        accessibilityLabel={`${nome}: vendas ${dinheiro(resumo.receita)}, ${palavra} ${dinheiroSemSinal(lucro)}`}
         aria-expanded={aberto}
         onPress={onAlternar}
         style={({ pressed }) => [estilos.cabecalho, { opacity: pressed ? 0.6 : 1 }]}>
@@ -190,7 +193,7 @@ function Dia({
               tom={prejuizo ? 'negativo' : 'textoFraco'}
               negrito={prejuizo}
               style={NUMERAL}>
-              {palavra} {dinheiroSemSinal(resumo.lucro_vendas)}
+              {palavra} {dinheiroSemSinal(lucro)}
             </Txt>
           </Linha>
         </View>

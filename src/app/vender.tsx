@@ -422,9 +422,8 @@ export default function Vender() {
  * acontece de lado, com uma mão, enquanto ela atende -- é o momento em que o
  * registro mais provavelmente deixa de acontecer.
  *
- * Sem custo nem lucro aqui: o aviso de produto sem custo mora em Hoje e em
- * Produtos. No meio do atendimento ele só disputaria atenção com o preço, que
- * é o único número que ela confere com o cliente.
+ * Sem lucro aqui: no meio do atendimento ele só disputaria atenção com o
+ * preço, que é o único número que ela confere com o cliente.
  *
  * O "−" é IRMÃO do bloco, por cima do canto, e não filho dele: botão dentro de
  * botão some pro leitor de tela no iOS (o de fora engole o de dentro) e é HTML

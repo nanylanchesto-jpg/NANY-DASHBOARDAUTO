@@ -1,10 +1,8 @@
 /**
- * Contas de calendário do Planejar: semana, mês, meta e compra da semana.
+ * Contas de calendário do Planejar: semana, mês e meta.
  *
- * Funções puras sobre o que o banco já somou. Aritmética de estoque NÃO mora
- * aqui (é dos gatilhos no Postgres): isto só recorta a série de
- * `resumo_por_dia` no período e projeta a compra a partir do ritmo que
- * `ingredientes_para_comprar` já calculou.
+ * Funções puras sobre o que o banco já somou: isto só recorta a série de
+ * `resumo_por_dia` no período.
  *
  * DATAS: entra e sai "YYYY-MM-DD", o `DATE` do Postgres, sem fuso. A conta é
  * feita em UTC puro (`Date.UTC`/`getUTC*`), que não tem horário de verão nem
@@ -15,8 +13,7 @@
  * do que o fechamento soma.
  */
 
-import type { DiaResumo, Meta, ParaComprar, Periodo } from './dados';
-import type { Unidade } from './unidades';
+import { lucroDe, type DiaResumo, type Meta, type Periodo } from './dados';
 
 const DIA_MS = 86_400_000;
 const ISO = /^\d{4}-\d{2}-\d{2}/;
@@ -106,12 +103,10 @@ export function diasRestantes(periodo: Periodo, hoje: string): number {
 
 export type SomaPeriodo = {
   receita: number;
-  /** Soma de `lucro_vendas`: margem, não desconta despesa. */
+  /** Vendas menos todos os gastos (`lucroDe`): o lucro que as telas mostram. */
   lucro: number;
   compras: number;
   despesas: number;
-  /** receita − compras − despesas, a mesma conta do `caixa` de `fechamento_do_dia`. */
-  caixa: number;
   atendimentos: number;
 };
 
@@ -131,7 +126,6 @@ export function somaPeriodo(dias: DiaResumo[], periodo: Periodo, hoje: string): 
     lucro: 0,
     compras: 0,
     despesas: 0,
-    caixa: 0,
     atendimentos: 0,
   };
   for (const d of dias) {
@@ -140,12 +134,12 @@ export function somaPeriodo(dias: DiaResumo[], periodo: Periodo, hoje: string): 
     // da migration 20260921120000, quando a série ainda não trazia despesas
     // nem atendimentos: sem ele, o total inteiro viraria NaN.
     soma.receita += d.receita || 0;
-    soma.lucro += d.lucro_vendas || 0;
     soma.compras += d.compras || 0;
     soma.despesas += d.despesas || 0;
     soma.atendimentos += d.atendimentos || 0;
   }
-  soma.caixa = soma.receita - soma.compras - soma.despesas;
+  // A mesma conta do `caixa` de `fechamento_do_dia`.
+  soma.lucro = lucroDe(soma);
   return soma;
 }
 
@@ -174,49 +168,4 @@ export function metaAtiva(metas: Meta[] | null | undefined): Meta | null {
     if (meta) return meta;
   }
   return null;
-}
-
-export type ItemDoPlano = {
-  id: string;
-  nome: string;
-  unidade: Unidade;
-  /** Quanto comprar, em unidade-base (g, ml ou unidade): exibir com `saldo()`. */
-  necessidade: number;
-  /** `necessidade` × custo médio atual. 0 se o ingrediente nunca foi comprado. */
-  custo: number;
-};
-
-/**
- * O que comprar pra `dias` dias no ritmo da última semana, do mais caro pro
- * mais barato.
- *
- * Saldo negativo conta como zero, e não como dívida a somar: o negativo é
- * venda feita com compra ainda não LANÇADA (ver `ingredientes.estoque_base`),
- * não pão faltando na prateleira. A compra que cobriu aquele buraco já
- * aconteceu; somá-la de novo faria comprar duas vezes.
- *
- * Arredonda pra cima na unidade-base: não existe comprar 9,4 pães, e 1 g a
- * mais de molho não muda o custo.
- *
- * Fica fora o que não gira (sem ritmo não há o que projetar) e o que já tem
- * estoque pro período: a lista é do que COMPRAR, e vazia quer dizer "nada".
- */
-export function planoDeCompras(itens: ParaComprar[], dias = 7): ItemDoPlano[] {
-  const plano: ItemDoPlano[] = [];
-  for (const item of itens) {
-    if (!(item.consumo_dia > 0)) continue;
-    const falta = item.consumo_dia * dias - Math.max(item.estoque_base, 0);
-    // O épsilon segura o 10,000000001 que sai de 1,4285714… × 7 e que o ceil
-    // levaria a 11.
-    const necessidade = Math.max(0, Math.ceil(falta - 1e-9));
-    if (necessidade === 0) continue;
-    plano.push({
-      id: item.id,
-      nome: item.nome,
-      unidade: item.unidade,
-      necessidade,
-      custo: necessidade * (item.custo_base || 0),
-    });
-  }
-  return plano.sort((a, b) => b.custo - a.custo || a.nome.localeCompare(b.nome, 'pt-BR'));
 }

@@ -225,7 +225,7 @@ const ItemDeAba = forwardRef<
 
   // Avisa quando esta aba PASSA a ser a ativa. No efeito, e não no `onPress`:
   // assim a chuva também acontece quando a troca vem de dentro de uma tela
-  // (o "Vender" da Hoje, o "Ver" do aviso de produto sem custo).
+  // (o "Vender" da Hoje, o "Vender" do Histórico vazio).
   useEffect(() => {
     if (ativo) aoFocar?.();
   }, [ativo, aoFocar]);

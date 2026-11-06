@@ -10,22 +10,11 @@
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import type { ItemLido } from './notinha';
 import { supabase } from './supabase';
-import type { Unidade } from './unidades';
 
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
-
-export type Ingrediente = {
-  id: string;
-  nome: string;
-  unidade: Unidade;
-  estoque_base: number;
-  custo_base: number;
-  created_at: string;
-};
 
 export type Produto = {
   id: string;
@@ -33,44 +22,16 @@ export type Produto = {
   preco_venda: number;
   ordem: number;
   ativo: boolean;
-  /** Apurado: soma da receita com o preço real das compras. 0 sem receita. */
+  /**
+   * Os quatro abaixo vêm de `produtos_com_custo` e são da época da receita por
+   * ingrediente. A tela não usa mais: o lucro agora é vendas menos gastos
+   * (ver `lucroDe`), sem custo por produto.
+   */
   custo_unitario: number;
   lucro_unitario: number;
   tem_receita: boolean;
-  /** Palpite dela, pra ver margem antes de existir compra. Nunca é apuração. */
   custo_estimado: number;
 };
-
-/**
- * Qual custo a tela mostra, e de que natureza ele é.
- *
- * Um lugar só porque a regra tem que ser a MESMA em Produtos, Hoje e Lucro: um
- * número com cara de apurado numa tela e de palpite na outra é pior que não ter
- * o palpite. E a ordem importa -- o apurado sempre ganha do estimado, senão o
- * palpite velho continuaria na tela depois da primeira nota lançada, que é
- * justamente quando ele deixa de valer.
- *
- * `custo_unitario > 0` além de `tem_receita` porque receita cadastrada com
- * ingrediente que nunca foi comprado ainda soma 0: tem receita e não tem custo.
- */
-export type CustoDoProduto =
-  | { tipo: 'apurado'; custo: number; lucro: number }
-  | { tipo: 'estimado'; custo: number; lucro: number }
-  | { tipo: 'ausente' };
-
-export function custoDoProduto(produto: Produto): CustoDoProduto {
-  if (produto.tem_receita && produto.custo_unitario > 0) {
-    return { tipo: 'apurado', custo: produto.custo_unitario, lucro: produto.lucro_unitario };
-  }
-  if (produto.custo_estimado > 0) {
-    return {
-      tipo: 'estimado',
-      custo: produto.custo_estimado,
-      lucro: produto.preco_venda - produto.custo_estimado,
-    };
-  }
-  return { tipo: 'ausente' };
-}
 
 /** Os valores do CHECK de `vendas.pagamento`. */
 export type Pagamento = 'dinheiro' | 'pix' | 'cartao';
@@ -112,23 +73,34 @@ export type DiaResumo = {
   atendimentos: number;
 };
 
+/**
+ * O lucro que TODA tela mostra: o que entrou de venda menos tudo que saiu
+ * (mercado e outros gastos) no mesmo período.
+ *
+ * Antes havia dois números, a margem dos ingredientes (`lucro_vendas`) e o
+ * caixa. A margem só existia se ela montasse a receita de cada produto,
+ * ingrediente por ingrediente -- e foi exatamente isso que ela achou difícil
+ * demais. Sem receita, a margem sai igual ao preço cheio, que é um número
+ * bonito e falso. Vendas menos gastos é o que ela já faz de cabeça, e não
+ * depende de cadastro nenhum.
+ *
+ * `|| 0` cobre a série de antes da migration 20260921120000, sem `despesas`.
+ */
+export function lucroDe(d: { receita: number; compras: number; despesas: number }) {
+  return (d.receita || 0) - (d.compras || 0) - (d.despesas || 0);
+}
+
+/** Tudo que saiu: mercado (lançado como gasto, ou compra antiga) mais o resto. */
+export function gastosDe(d: { compras: number; despesas: number }) {
+  return (d.compras || 0) + (d.despesas || 0);
+}
+
 export type ProdutoVendas = {
   produto_id: string;
   nome: string;
   unidades: number;
   receita: number;
   lucro: number;
-};
-
-export type ParaComprar = {
-  id: string;
-  nome: string;
-  unidade: Unidade;
-  estoque_base: number;
-  custo_base: number;
-  consumo_dia: number;
-  /** null quando o ingrediente não girou na semana: "dias" não significaria nada. */
-  dias_restantes: number | null;
 };
 
 export type CompraResumo = {
@@ -171,13 +143,6 @@ export type Despesa = {
   created_at: string;
 };
 
-export type ItemReceita = {
-  id: string;
-  ingrediente_id: string;
-  quantidade_base: number;
-  ingredientes: { nome: string; unidade: Unidade; custo_base: number } | null;
-};
-
 // ---------------------------------------------------------------------------
 // Chaves de cache
 // ---------------------------------------------------------------------------
@@ -186,10 +151,7 @@ export const chaves = {
   fechamento: (dia?: string) => ['fechamento', dia ?? 'hoje'] as const,
   resumoDias: (dias: number) => ['resumo-dias', dias] as const,
   porProduto: (dias: number) => ['por-produto', dias] as const,
-  paraComprar: ['para-comprar'] as const,
   produtos: ['produtos'] as const,
-  ingredientes: ['ingredientes'] as const,
-  receita: (produtoId: string) => ['receita', produtoId] as const,
   compras: ['compras'] as const,
   vendasDoDia: (dia?: string) => ['vendas-do-dia', dia ?? 'hoje'] as const,
   metas: ['metas'] as const,
@@ -210,9 +172,7 @@ function invalidarMovimento(qc: QueryClient) {
     'fechamento',
     'resumo-dias',
     'por-produto',
-    'para-comprar',
     'produtos',
-    'ingredientes',
     'compras',
     'vendas-do-dia',
     'despesas',
@@ -274,50 +234,14 @@ export function useVendasPorProduto(dias = 30) {
   });
 }
 
-export function useParaComprar() {
-  return useQuery({
-    queryKey: chaves.paraComprar,
-    queryFn: () => rpc<ParaComprar[]>('ingredientes_para_comprar'),
-  });
-}
-
 // ---------------------------------------------------------------------------
-// Produtos, ingredientes e receita
+// Produtos
 // ---------------------------------------------------------------------------
 
 export function useProdutos() {
   return useQuery({
     queryKey: chaves.produtos,
     queryFn: () => rpc<Produto[]>('produtos_com_custo'),
-  });
-}
-
-export function useIngredientes() {
-  return useQuery({
-    queryKey: chaves.ingredientes,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('ingredientes')
-        .select('id, nome, unidade, estoque_base, custo_base, created_at')
-        .order('nome');
-      if (error) throw falhaDoBanco(error);
-      return (data ?? []) as Ingrediente[];
-    },
-  });
-}
-
-export function useReceita(produtoId: string | null) {
-  return useQuery({
-    queryKey: chaves.receita(produtoId ?? ''),
-    enabled: Boolean(produtoId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('receita_itens')
-        .select('id, ingrediente_id, quantidade_base, ingredientes(nome, unidade, custo_base)')
-        .eq('produto_id', produtoId!);
-      if (error) throw falhaDoBanco(error);
-      return (data ?? []) as unknown as ItemReceita[];
-    },
   });
 }
 
@@ -339,8 +263,6 @@ export function useSalvarProduto() {
       ordem?: number;
       /** Produto com venda registrada não pode ser apagado (FK restrita): desativar é a saída. */
       ativo?: boolean;
-      /** Palpite de custo. `undefined` não mexe no que já está gravado. */
-      custo_estimado?: number;
     }) => {
       if (produto.id) {
         const { error } = await supabase
@@ -350,9 +272,6 @@ export function useSalvarProduto() {
             preco_venda: produto.preco_venda,
             ordem: produto.ordem ?? 0,
             ...(produto.ativo === undefined ? {} : { ativo: produto.ativo }),
-            ...(produto.custo_estimado === undefined
-              ? {}
-              : { custo_estimado: produto.custo_estimado }),
           })
           .eq('id', produto.id);
         if (error) throw falhaDoBanco(error);
@@ -365,47 +284,12 @@ export function useSalvarProduto() {
           nome: produto.nome.trim(),
           preco_venda: produto.preco_venda,
           ordem: produto.ordem ?? 0,
-          custo_estimado: produto.custo_estimado ?? 0,
         })
         .select('id')
         .single();
       if (error) throw falhaDoBanco(error);
       return (data as { id: string }).id;
     },
-    onSuccess: () => invalidarMovimento(qc),
-  });
-}
-
-/**
- * Produto de revenda (Coca, água, salgadinho): ela compra pronto e vende pronto.
- *
- * Uma chamada só porque são quatro escritas dependentes -- ingrediente, produto,
- * item de receita e, se ela informar, a primeira compra. Fazer em quatro idas e
- * voltas deixaria um ingrediente órfão ou um produto sem receita quando o 3G do
- * balcão cai no meio, e produto sem receita é exatamente o estado "lucro igual
- * ao preço cheio" que isto existe pra acabar.
- */
-export function useCriarProdutoDeRevenda() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      nome,
-      preco_venda,
-      quantidade = 0,
-      preco_pago = 0,
-    }: {
-      nome: string;
-      preco_venda: number;
-      /** 0 cria só o cadastro; o custo fica pendente até a primeira nota. */
-      quantidade?: number;
-      preco_pago?: number;
-    }) =>
-      rpc<string>('criar_produto_de_revenda', {
-        _nome: nome.trim(),
-        _preco_venda: preco_venda,
-        _quantidade: quantidade,
-        _preco_pago: preco_pago,
-      }),
     onSuccess: () => invalidarMovimento(qc),
   });
 }
@@ -425,84 +309,6 @@ export function useApagarProduto() {
       }
     },
     onSuccess: () => invalidarMovimento(qc),
-  });
-}
-
-export function useSalvarIngrediente() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (ingrediente: { id?: string; nome: string; unidade: Unidade }) => {
-      if (ingrediente.id) {
-        const { error } = await supabase
-          .from('ingredientes')
-          .update({ nome: ingrediente.nome.trim(), unidade: ingrediente.unidade })
-          .eq('id', ingrediente.id);
-        if (error) throw falhaDoBanco(error);
-        return ingrediente.id;
-      }
-      const { data, error } = await supabase
-        .from('ingredientes')
-        .insert({
-          user_id: await donaAtual(),
-          nome: ingrediente.nome.trim(),
-          unidade: ingrediente.unidade,
-        })
-        .select('id')
-        .single();
-      if (error) {
-        // 23505 = unique_violation: bateu no índice `ingredientes_nome_unico`,
-        // que compara o nome NORMALIZADO -- então "Pão" e "PAO" caem aqui.
-        if (error.code === '23505') {
-          throw new Error('Já existe um ingrediente com esse nome.');
-        }
-        // 23514 = check_violation: nome vazio ou acima de 120 caracteres. Não é
-        // duplicata, e dizer que é mandaria ela procurar um ingrediente que não
-        // existe.
-        if (error.code === '23514') {
-          throw new Error('Nome inválido: use de 1 a 120 caracteres.');
-        }
-        throw falhaDoBanco(error);
-      }
-      return (data as { id: string }).id;
-    },
-    onSuccess: () => invalidarMovimento(qc),
-  });
-}
-
-export function useSalvarItemReceita() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (item: {
-      produto_id: string;
-      ingrediente_id: string;
-      quantidade_base: number;
-    }) => {
-      const { error } = await supabase.from('receita_itens').upsert(
-        { user_id: await donaAtual(), ...item },
-        // Sem `onConflict`, mudar "1 pão" pra "2 pães" daria erro de duplicata
-        // em vez de atualizar a linha que já existe.
-        { onConflict: 'produto_id,ingrediente_id' },
-      );
-      if (error) throw falhaDoBanco(error);
-    },
-    onSuccess: (_dados, item) => {
-      qc.invalidateQueries({ queryKey: chaves.receita(item.produto_id) });
-      return invalidarMovimento(qc);
-    },
-  });
-}
-
-export function useApagarItemReceita() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id }: { id: string; produto_id: string }) => {
-      const { error } = await supabase.from('receita_itens').delete().eq('id', id);
-      if (error) throw falhaDoBanco(error);
-    },
-    onSuccess: (_dados, item) => {
-      qc.invalidateQueries({ queryKey: chaves.receita(item.produto_id) });
-      return invalidarMovimento(qc);
-    },
   });
 }
 
@@ -617,7 +423,7 @@ export function useApagarMeta() {
 }
 
 // ---------------------------------------------------------------------------
-// Despesas (gasto que não é ingrediente)
+// Gastos (tabela `despesas`): mercado, gás, embalagem, transporte...
 // ---------------------------------------------------------------------------
 
 export function useDespesas(limite = 60) {
@@ -689,38 +495,17 @@ export function useApagarDespesa() {
 }
 
 // ---------------------------------------------------------------------------
-// Compras
+// Compras antigas
+//
+// Da época em que a nota entrava item por item. Não se lança mais compra (o
+// mercado agora é um gasto com o total da nota), mas as antigas continuam
+// somando no dia delas, e a tela de Gastos ainda lista e desfaz.
 // ---------------------------------------------------------------------------
 
 export function useHistoricoCompras(limite = 20) {
   return useQuery({
     queryKey: chaves.compras,
     queryFn: () => rpc<CompraResumo[]>('historico_compras', { _limite: limite }),
-  });
-}
-
-export function useSalvarCompra() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      fornecedor,
-      data,
-      itens,
-      origem = 'foto',
-    }: {
-      fornecedor: string;
-      /** "" quando a nota não tinha data: o banco assume o dia de hoje. */
-      data: string;
-      itens: ItemLido[];
-      origem?: 'foto' | 'manual';
-    }) =>
-      rpc<string>('registrar_compra', {
-        _fornecedor: fornecedor,
-        _comprada_em: data || null,
-        _itens: itens,
-        _origem: origem,
-      }),
-    onSuccess: () => invalidarMovimento(qc),
   });
 }
 

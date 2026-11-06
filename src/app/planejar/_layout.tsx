@@ -4,12 +4,12 @@ import { useTema } from '@/hooks/use-tema';
 
 /**
  * Planejar é uma pilha dentro da aba: o hub em `index` e cada assunto (metas,
- * compras, estoque...) um nível abaixo. É o que deixa a aba mostrar só os
+ * gastos, produtos...) um nível abaixo. É o que deixa a aba mostrar só os
  * números que importam e esconder o detalhe atrás de um toque.
  *
  * `anchor: 'index'` garante o hub EMBAIXO de qualquer tela interna, inclusive
- * quando ela chega direto -- o aviso de estoque da aba Hoje abre
- * `/planejar/estoque`, e sem a âncora o "voltar" dali não teria pra onde ir.
+ * quando ela chega direto -- o "Anotar gasto" da aba Hoje abre
+ * `/planejar/gastos`, e sem a âncora o "voltar" dali não teria pra onde ir.
  */
 export const unstable_settings = { anchor: 'index' };
 

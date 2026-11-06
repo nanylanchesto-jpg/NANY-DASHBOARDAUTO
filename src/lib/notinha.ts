@@ -1,5 +1,5 @@
 /**
- * Foto da notinha: câmera → compressão → Edge Function → itens conferíveis.
+ * Foto da notinha: câmera → compressão → Edge Function → total conferível.
  *
  * `expo-image-picker` resolve o web e o nativo com uma chamada só:
  * `launchCameraAsync({ cameraType: 'back' })` abre a câmera nativa no celular
@@ -27,8 +27,29 @@ export type NotinhaLida = {
   fornecedor: string;
   /** "AAAA-MM-DD" ou "" quando a nota não trazia data legível. */
   data: string;
+  /**
+   * Total impresso na nota, 0 quando ilegível. Opcional porque a Edge Function
+   * publicada antes deste campo não devolve: aí vale a soma dos itens.
+   */
+  total?: number;
   itens: ItemLido[];
 };
+
+/**
+ * Quanto a nota deu: o total impresso, ou a soma dos itens quando ele não veio.
+ *
+ * A soma é a reserva, não a regra: ela deixa de fora sacola e desconto (a
+ * leitura exclui o que não é mercadoria), então costuma dar alguns centavos a
+ * menos que a nota. Por isso a tela pede pra conferir com o papel.
+ */
+export function totalDaNota(nota: NotinhaLida): number {
+  if (nota.total && nota.total > 0) return nota.total;
+  const soma = nota.itens.reduce(
+    (t, item) => t + (item.quantidade || 0) * (item.preco_unitario || 0),
+    0,
+  );
+  return Math.round(soma * 100) / 100;
+}
 
 /** Foto escolhida, já pronta pra enviar. */
 export type FotoPronta = { dataUrl: string; largura: number; altura: number };
@@ -153,6 +174,9 @@ export async function lerNotinha(fotos: FotoPronta[]): Promise<NotinhaLida> {
     );
   }
 
-  if (!data?.itens?.length) throw new Error('Nenhum ingrediente foi identificado na nota.');
+  if (!data || (!data.itens?.length && !(data.total && data.total > 0))) {
+    throw new Error('Não achei os valores nessa nota. Tente uma foto mais nítida.');
+  }
+  data.itens = data.itens ?? [];
   return data;
 }

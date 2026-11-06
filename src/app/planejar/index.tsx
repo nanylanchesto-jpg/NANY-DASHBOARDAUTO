@@ -19,15 +19,7 @@ import {
   type TomTexto,
 } from '@/components/ui';
 import { Espaco } from '@/constants/theme';
-import {
-  custoDoProduto,
-  useMetas,
-  useParaComprar,
-  useProdutos,
-  useResumoPorDia,
-  type ParaComprar,
-  type Periodo,
-} from '@/lib/dados';
+import { gastosDe, useMetas, useProdutos, useResumoPorDia, type Periodo } from '@/lib/dados';
 import { dinheiro, dinheiroCurto, dinheiroSemSinal } from '@/lib/formato';
 import { hojeDaSerie, metaAtiva, somaPeriodo, type SomaPeriodo } from '@/lib/periodo';
 import { sair } from '@/lib/sessao';
@@ -36,7 +28,7 @@ type Recorte = 'semana' | 'mes';
 
 /**
  * 31 dias: cabe o mês mais longo inteiro, e a semana de sobra. É a MESMA série
- * que Metas, Semana, Lucro e Histórico pedem -- quem abre qualquer uma delas
+ * que Metas, Histórico e o Painel pedem -- quem abre qualquer uma delas
  * depois do hub recebe do cache, sem carregando no meio.
  */
 const SERIE = 31;
@@ -51,16 +43,6 @@ const POR: Record<Periodo, string> = { dia: 'dia', semana: 'semana', mes: 'mês'
 
 const NUMERAL: TextStyle = { fontVariant: ['tabular-nums'] };
 
-/**
- * O que a aba Hoje também chama de "precisa de atenção": saldo negativo (venda
- * sem a compra lançada) ou menos de 3 dias no ritmo da semana. O critério tem
- * que ser o mesmo nas duas telas, senão uma avisa e a outra diz que está tudo
- * bem.
- */
-function precisaAtencao(item: ParaComprar) {
-  return item.estoque_base < 0 || (item.dias_restantes !== null && item.dias_restantes < 3);
-}
-
 function mensagem(falha: unknown) {
   return falha instanceof Error ? falha.message : 'Não consegui carregar os números.';
 }
@@ -72,7 +54,6 @@ export default function Planejar() {
 
   const serie = useResumoPorDia(SERIE);
   const metas = useMetas();
-  const estoque = useParaComprar();
   const produtos = useProdutos();
 
   const dias = serie.data ?? [];
@@ -83,9 +64,7 @@ export default function Planejar() {
   const metaDoRecorte = metas.data?.find((m) => m.periodo === recorte && m.valor > 0) ?? null;
   const ativa = metaAtiva(metas.data);
 
-  const acabando = (estoque.data ?? []).filter(precisaAtencao).length;
   const ativos = (produtos.data ?? []).filter((p) => p.ativo);
-  const semCusto = ativos.filter((p) => custoDoProduto(p).tipo === 'ausente').length;
 
   async function aoSair() {
     setSaindo(true);
@@ -120,10 +99,39 @@ export default function Planejar() {
       </View>
 
       {/* A navegação não depende dos números: se a série falhar, ela ainda
-          chega em Compras e em Produtos. Por isso o cartão fica fora do
+          chega em Gastos e em Produtos. Por isso o cartão fica fora do
           carregando/erro acima. Os valores só aparecem quando existem --
-          valor "R$ 0" enquanto carrega seria um número falso. */}
+          valor "R$ 0" enquanto carrega seria um número falso.
+
+          Quatro itens, na ordem do uso: gasto ela anota toda semana, produto
+          quase nunca muda. Já foram sete (com Semana, Compras e Estoque), e
+          a dona se perdia. */}
       <Cartao style={{ marginTop: Espaco.xl, paddingVertical: Espaco.xs }}>
+        <ItemLista
+          icone="gastos"
+          titulo="Gastos"
+          valor={serie.data ? dinheiroCurto(gastosDe(soma)) : undefined}
+          rotuloAcessivel={
+            serie.data
+              ? `Gastos, ${dinheiroCurto(gastosDe(soma))} ${recorte === 'semana' ? 'na semana' : 'no mês'}`
+              : 'Gastos'
+          }
+          onPress={() => router.push('/planejar/gastos')}
+        />
+        <Divisor />
+        <ItemLista
+          icone="produtos"
+          titulo="Produtos"
+          valor={
+            !produtos.data
+              ? undefined
+              : ativos.length > 0
+                ? `${ativos.length} à venda`
+                : 'Cadastrar'
+          }
+          onPress={() => router.push('/planejar/produtos')}
+        />
+        <Divisor />
         <ItemLista
           icone="meta"
           titulo="Metas"
@@ -140,56 +148,9 @@ export default function Planejar() {
           onPress={() => router.push('/planejar/metas')}
         />
         <Divisor />
-        <ItemLista icone="semana" titulo="Semana" onPress={() => router.push('/planejar/semana')} />
-        <Divisor />
-        <ItemLista
-          icone="compras"
-          titulo="Compras"
-          onPress={() => router.push('/planejar/compras')}
-        />
-        <Divisor />
-        <ItemLista
-          icone="gastos"
-          titulo="Gastos"
-          valor={serie.data ? dinheiroCurto(soma.compras + soma.despesas) : undefined}
-          onPress={() => router.push('/planejar/gastos')}
-        />
-        <Divisor />
-        <ItemLista
-          icone="estoque"
-          titulo="Estoque"
-          alerta={acabando > 0}
-          valor={
-            !estoque.data
-              ? undefined
-              : acabando > 0
-                ? `${acabando} acabando`
-                : estoque.data.length > 0
-                  ? 'em ordem'
-                  : undefined
-          }
-          onPress={() => router.push('/planejar/estoque')}
-        />
-        <Divisor />
-        <ItemLista
-          icone="produtos"
-          titulo="Produtos"
-          alerta={semCusto > 0}
-          valor={
-            !produtos.data
-              ? undefined
-              : semCusto > 0
-                ? `${semCusto} sem custo`
-                : ativos.length > 0
-                  ? `${ativos.length} à venda`
-                  : 'Cadastrar'
-          }
-          onPress={() => router.push('/planejar/produtos')}
-        />
-        <Divisor />
         <ItemLista
           icone="historico"
-          titulo="Histórico"
+          titulo="Histórico de vendas"
           onPress={() => router.push('/planejar/historico')}
         />
       </Cartao>
@@ -215,9 +176,9 @@ export default function Planejar() {
 // ---------------------------------------------------------------------------
 
 /**
- * Um número grande (o lucro) e três pequenos. O lucro é a pergunta do
- * planejamento -- "a semana valeu?" --; vendas, gastos e caixa explicam de
- * onde ele veio, e por isso ficam num degrau abaixo.
+ * Um número grande (o lucro) e dois pequenos. O lucro é a pergunta do
+ * planejamento -- "a semana valeu?" --; vendas e gastos explicam de onde ele
+ * veio (lucro = vendas − gastos), e por isso ficam num degrau abaixo.
  */
 function Resumo({
   soma,
@@ -244,12 +205,7 @@ function Resumo({
         <Miudo rotulo="Vendas" valor={dinheiroCurto(soma.receita)} />
         {/* Gastos = mercado + o resto (gás, embalagem...). É o que saiu do
             bolso no período, que é o que ela compara com o que entrou. */}
-        <Miudo rotulo="Gastos" valor={dinheiroCurto(soma.compras + soma.despesas)} />
-        <Miudo
-          rotulo="Caixa"
-          valor={dinheiroCurto(soma.caixa)}
-          tom={soma.caixa < 0 ? 'negativo' : 'texto'}
-        />
+        <Miudo rotulo="Gastos" valor={dinheiroCurto(gastosDe(soma))} />
       </Linha>
       {meta ? (
         <MetaDoRecorte

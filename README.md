@@ -1,8 +1,9 @@
 # Nany Lanches — controle de compras, vendas e lucro
 
 App React Native (Expo) para a Nany Lanches (MEI), do Projeto Integrador I em TI.
-Ela fotografa a nota do mercado, a IA extrai os ingredientes, e o app calcula o
-custo por produto e o resultado do dia.
+Ela registra as vendas, anota os gastos (fotografando a nota do mercado, que a
+IA lê, ou digitando o valor) e o app mostra quanto vendeu, quanto gastou e
+quanto sobrou.
 
 Responde ao problema validado no Documento 04: *"as informações de compras,
 custos e vendas não são registradas de forma sistemática e ficam principalmente
@@ -50,18 +51,18 @@ No Vercel, cadastre as mesmas duas em *Settings → Environment Variables*.
 
 1. Criar conta no app (e-mail e senha).
 2. **Planejar → Produtos** → cadastrar "Hot-dog" a R$ 12,00 e "Suco" a R$ 6,00.
-3. **Planejar → Compras** → fotografar uma nota do mercado. Os ingredientes
-   entram com preço e quantidade; confira antes de salvar.
-4. Voltar a **Produtos** → abrir o hot-dog e montar a receita (1 pão, 1
-   salsicha, 20 g de molho). É isso que faz o custo existir.
-5. **Vender** → tocar nos produtos, escolher a forma de pagamento, finalizar.
-6. **Hoje** → quanto vendeu, quanto ganhou, o que pede atenção.
-7. **Painel** → os gráficos do período: vendas e lucro por dia, por produto e
-   quanto do que entrou foi embora em compra e gasto.
+   Só nome e preço.
+3. **Vender** → tocar nos produtos, escolher a forma de pagamento, finalizar.
+4. **Anotar gasto** (na Hoje) → tirar foto da nota do mercado. O app lê o total;
+   ela confere com o papel e salva. Gás, embalagem e o resto: digita o valor.
+5. **Hoje** → quanto vendeu, quanto gastou e quanto sobrou.
+6. **Painel** → os gráficos do período: vendas por dia, o que mais vende e
+   quanto do que entrou foi embora em gasto.
 
-O passo 4 é o que a maioria pula, e sem ele o lucro aparece igual ao preço
-cheio. O app avisa em Hoje e em Produtos, em vez de mostrar um número bonito e
-falso.
+Até a versão de novembro/2026 o app pedia a receita de cada produto
+(ingrediente por ingrediente) e conferia a nota item a item, pra calcular o
+custo de cada hot-dog. A dona achou complicado demais, e é por isso que saiu:
+um app que ela abandona não registra nada.
 
 Opcional, e é o que faz o Planejar valer: **Planejar → Metas** define quanto
 vender por dia, semana ou mês. Com uma meta ativa, a Hoje mostra quanto falta
@@ -69,14 +70,18 @@ logo acima do botão Vender.
 
 ## Decisões que valem saber
 
-**Lucro e caixa são dois números diferentes, e os dois aparecem.** `lucro_vendas`
-é a receita menos o custo dos ingredientes que as vendas do dia consumiram — a
-margem do negócio. `caixa` é o que entrou de venda menos o que saiu do bolso
-naquele dia — compra do mercado e também gasto que não é ingrediente (gás,
-embalagem, taxa da feira). Num dia de feira o caixa afunda mesmo com a lanchonete
-vendendo bem, porque a compra cobre a semana. Mostrar só o caixa faria um dia
-normal parecer prejuízo; mostrar só a margem esconderia o aperto que ela sente
-de verdade.
+**Lucro é vendas menos gastos.** É a conta que ela já faz de cabeça e não
+depende de cadastro nenhum. Antes havia dois números — a margem dos
+ingredientes (`lucro_vendas`) e o caixa —, mas a margem só existia com a receita
+de cada produto montada, e sem ela saía igual ao preço cheio. No dia do mercado
+o lucro do dia fica negativo, porque a compra cobre a semana: a Hoje diz "o
+gasto rende outros dias", e o lucro da semana e do mês (Planejar, Painel) é
+onde isso se dilui.
+
+**O mercado é um gasto com o total da nota.** A foto vai pra IA, que devolve o
+total impresso (e os itens, que a tela só conta). Ela confere um número só e
+salva em `despesas`, junto com gás e embalagem. As compras antigas, lançadas
+item por item, continuam somando no dia delas e aparecem na lista de Gastos.
 
 **Uma venda é um pedido, não um toque.** Ela junta 2 hot-dogs e 1 suco, escolhe
 Dinheiro, Pix ou Cartão e finaliza: sai uma linha em `vendas` por produto
@@ -151,7 +156,7 @@ Projeto Supabase `vllnhhwlblszkmcvtgno`, verificado contra o servidor em 17/09/2
 |---|---|
 | `npm run typecheck` | passa |
 | `npm run lint` | passa |
-| `npm run build:web` | passa — 13 rotas pré-renderizadas |
+| `npm run build:web` | passa — 10 rotas pré-renderizadas |
 | `npm run checa-paleta` | passa — 82 pares de contraste |
 | 5 migrations aplicadas | ✅ 7 tabelas e as RPCs respondendo |
 | 6ª migration (pedido, pagamento, metas, gastos) | ✅ aplicada em 22/09/2026 pelo SQL Editor |
@@ -176,16 +181,16 @@ Podem ser apagadas.
 ```
 src/
   app/
-    _layout.tsx   as 3 abas (expo-router/ui) e o portão de login
+    _layout.tsx   as 4 abas (expo-router/ui) e o portão de login
     index.tsx     Hoje
     vender.tsx    Vender
-    planejar/     hub + metas, semana, lucro, histórico, compras, gastos,
-                  estoque, produtos (pilha própria)
+    painel.tsx    Painel
+    planejar/     hub + gastos, produtos, metas, histórico (pilha própria)
   components/     ui.tsx (primitivas), icone.tsx, grafico-barras.tsx, tela-login.tsx
   lib/
-    notinha.ts    câmera → compressão → Edge Function
+    notinha.ts    câmera → compressão → Edge Function → total da nota
     dados.ts      tipos e hooks de consulta/gravação
-    periodo.ts    semana, mês, meta e plano de compra (funções puras)
+    periodo.ts    semana, mês e meta (funções puras)
     unidades.ts   unidade-base (espelha unidade_base()/fator_base() do banco)
     formato.ts    dinheiro, quantidade e data em pt-BR
   constants/

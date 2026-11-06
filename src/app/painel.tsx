@@ -4,12 +4,17 @@
  * Nasceu a pedido da dona, e tirou do Planejar o que era desenho (a antiga
  * tela Lucro saiu inteira pra cá). A divisão que ficou: a Hoje responde o dia,
  * o Painel responde o período, e o Planejar é onde ela MEXE nas coisas
- * (metas, compras, gastos, estoque, produtos, histórico).
+ * (gastos, produtos, metas, histórico).
  *
  * Três leituras, nesta ordem, que é a ordem das perguntas dela:
- *   1. quanto entrou e quanto sobrou, dia a dia;
- *   2. qual produto sustenta o resultado;
- *   3. quanto do que entrou foi embora em compra e gasto.
+ *   1. quanto vendeu, dia a dia;
+ *   2. qual produto mais vende;
+ *   3. quanto do que entrou foi embora em gasto, e quanto sobrou.
+ *
+ * Já houve um "Lucro por dia" e um lucro por produto. Os dois dependiam da
+ * receita de cada produto (ingrediente por ingrediente), que saiu do app por
+ * ser difícil demais; sem ela, eram números falsos. O lucro agora é um só,
+ * vendas menos gastos (`lucroDe`), e faz sentido no período, não por produto.
  *
  * Tudo sai da MESMA série de 31 dias do hub do Planejar: trocar 7 ↔ 30 é um
  * recorte em memória, sem ida nova ao banco a cada toque.
@@ -37,14 +42,14 @@ import {
 import { Espaco, Raio, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import {
-  custoDoProduto,
-  useProdutos,
+  gastosDe,
+  lucroDe,
   useResumoPorDia,
   useVendasPorProduto,
   type DiaResumo,
   type ProdutoVendas,
 } from '@/lib/dados';
-import { dinheiro, dinheiroSemSinal } from '@/lib/formato';
+import { dinheiro, dinheiroSemSinal, inteiro } from '@/lib/formato';
 
 type Janela = '7' | '30';
 
@@ -56,7 +61,7 @@ const JANELAS: { valor: Janela; rotulo: string }[] = [
 /** 31 dias: a mesma série que o hub do Planejar já pede, e cabe o mês inteiro. */
 const SERIE = 31;
 
-/** Altura da barra de "Por produto": dá pra ver o contorno da vazada. */
+/** Altura da barra de "O que mais vende". */
 const ALTURA_BARRA = 10;
 /** Altura das duas barras de "Gastos x vendas", que são leitura de proporção. */
 const ALTURA_PROPORCAO = 18;
@@ -73,7 +78,6 @@ export default function Painel() {
 
   const serie = useResumoPorDia(SERIE);
   const porProduto = useVendasPorProduto(n);
-  const produtos = useProdutos();
 
   // Os últimos N dias, terminando no hoje do banco. Ordena antes de cortar pra
   // não depender da ordem em que a série veio.
@@ -81,25 +85,15 @@ export default function Painel() {
     .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0))
     .slice(-n);
 
-  const soma = recorte.reduce(
+  const somados = recorte.reduce(
     (t, d) => ({
       receita: t.receita + (d.receita || 0),
-      lucro: t.lucro + (d.lucro_vendas || 0),
-      gastos: t.gastos + (d.compras || 0) + (d.despesas || 0),
       compras: t.compras + (d.compras || 0),
       despesas: t.despesas + (d.despesas || 0),
     }),
-    { receita: 0, lucro: 0, gastos: 0, compras: 0, despesas: 0 },
+    { receita: 0, compras: 0, despesas: 0 },
   );
-
-  // "Sem custo" aqui inclui o produto que só tem custo ESTIMADO: o palpite não
-  // entra em `vendas.custo_unitario` (ver a migration da revenda), então cada
-  // venda dele conta o preço cheio como lucro nestes gráficos. Na aba Hoje o
-  // critério é mais estreito, porque lá a pergunta é outra ("falta cadastrar o
-  // custo?"); aqui é "este lucro está inflado?".
-  const semCustoReal = (produtos.data ?? []).filter(
-    (p) => p.ativo && custoDoProduto(p).tipo !== 'apurado',
-  );
+  const soma = { ...somados, gastos: gastosDe(somados), lucro: lucroDe(somados) };
 
   const tomLucro: TomTexto = soma.lucro > 0 ? 'positivo' : soma.lucro < 0 ? 'negativo' : 'texto';
   const vazio = recorte.every((d) => (d.receita || 0) === 0);
@@ -132,7 +126,9 @@ export default function Painel() {
                 valor={dinheiro(soma.receita)}
                 legenda={`${n} dias`}
               />
+              {/* Mesma ordem da Hoje: Gastos e depois Lucro (= vendas − gastos). */}
               <Linha style={{ gap: Espaco.lg, alignItems: 'flex-start' }}>
+                <Indicador style={{ flex: 1 }} rotulo="Gastos" valor={dinheiro(soma.gastos)} />
                 {/* "Prejuízo" escrito no rótulo, e o valor sem sinal: quem diz
                     o lado é a palavra. */}
                 <Indicador
@@ -141,7 +137,6 @@ export default function Painel() {
                   valor={dinheiroSemSinal(soma.lucro)}
                   tom={tomLucro}
                 />
-                <Indicador style={{ flex: 1 }} rotulo="Gastos" valor={dinheiro(soma.gastos)} />
               </Linha>
             </Cartao>
           </View>
@@ -155,31 +150,7 @@ export default function Painel() {
             </Cartao>
           </Secao>
 
-          <Secao titulo="Lucro por dia">
-            <Cartao>
-              <GraficoBarras
-                modo="lucro"
-                pontos={recorte.map((d) => ({
-                  dia: d.dia.slice(0, 10),
-                  valor: d.lucro_vendas || 0,
-                }))}
-              />
-            </Cartao>
-          </Secao>
-
-          {semCustoReal.length > 0 ? (
-            <View style={{ marginTop: Espaco.lg }}>
-              <Aviso
-                tom="atencao"
-                acao={{ rotulo: 'Ver', onPress: () => router.push('/planejar/produtos') }}>
-                {semCustoReal.length === 1
-                  ? `${semCustoReal[0]!.nome} sem custo real`
-                  : `${semCustoReal.length} produtos sem custo real`}
-              </Aviso>
-            </View>
-          ) : null}
-
-          <Secao titulo="Por produto">
+          <Secao titulo="O que mais vende">
             {porProduto.error ? (
               <Aviso tom="negativo">
                 {mensagem(porProduto.error, 'Não consegui carregar os produtos.')}
@@ -199,15 +170,14 @@ export default function Painel() {
         </>
       )}
 
-      {/* A foto da nota é o que alimenta metade destes gráficos (o custo do
-          produto e a linha de gastos), e vivia escondida dentro do Planejar.
-          Secundária, não mostarda: no Painel a ação principal é olhar. */}
+      {/* O gasto é metade da conta do lucro, e sem atalho ela esquecia de
+          anotar. Secundária, não mostarda: no Painel a ação principal é olhar. */}
       <Botao
         variante="secundaria"
         icone="camera"
-        onPress={() => router.push('/planejar/compras')}
+        onPress={() => router.push('/planejar/gastos')}
         style={{ marginTop: Espaco.xl }}>
-        Fotografar nota
+        Anotar gasto
       </Botao>
     </Tela>
   );
@@ -218,13 +188,12 @@ export default function Painel() {
 // ---------------------------------------------------------------------------
 
 function PorProduto({ linhas }: { linhas: ProdutoVendas[] }) {
-  const vendidos = linhas.filter((linha) => linha.unidades > 0);
+  const vendidos = linhas
+    .filter((linha) => linha.unidades > 0)
+    .sort((a, b) => b.receita - a.receita);
   if (vendidos.length === 0) return <Vazio titulo="Nenhuma venda no período" />;
 
-  // A barra é proporcional ao MAIOR lucro em módulo: um produto no prejuízo
-  // aparece do tamanho de um lucro equivalente. A comparação é de peso no
-  // resultado; o sinal vai na forma da barra e na palavra.
-  const teto = Math.max(0, ...vendidos.map((linha) => Math.abs(linha.lucro)));
+  const teto = Math.max(0, ...vendidos.map((linha) => linha.receita));
 
   return (
     <Cartao style={{ gap: Espaco.lg }}>
@@ -235,29 +204,29 @@ function PorProduto({ linhas }: { linhas: ProdutoVendas[] }) {
   );
 }
 
+/**
+ * Quanto cada produto trouxe e quantos saíram. Só venda, sem lucro: o lucro
+ * por produto precisava da receita de ingredientes, que o app não pede mais.
+ */
 function LinhaDeProduto({ linha, teto }: { linha: ProdutoVendas; teto: number }) {
   const { grafico } = useTema();
-  const prejuizo = linha.lucro < 0;
-  const fracao = teto > 0 ? Math.abs(linha.lucro) / teto : 0;
+  const fracao = teto > 0 ? linha.receita / teto : 0;
+  const quantos = `${inteiro(linha.unidades)} ${linha.unidades === 1 ? 'vendido' : 'vendidos'}`;
 
   return (
     <View
       accessible
-      accessibilityLabel={`${linha.nome}, ${prejuizo ? 'prejuízo' : 'lucro'} ${dinheiroSemSinal(
-        linha.lucro,
-      )}`}
+      accessibilityLabel={`${linha.nome}, ${quantos}, ${dinheiro(linha.receita)}`}
       style={{ gap: Espaco.sm }}>
       <Linha style={{ alignItems: 'baseline' }}>
         <Txt tipo="corpo" negrito numberOfLines={1} style={{ flex: 1 }}>
           {linha.nome}
         </Txt>
-        {prejuizo ? (
-          <Txt tipo="rotulo" negrito tom="negativo">
-            prejuízo
-          </Txt>
-        ) : null}
-        <Txt tipo="corpo" negrito tom={prejuizo ? 'negativo' : 'texto'} style={NUMERAL}>
-          {dinheiroSemSinal(linha.lucro)}
+        <Txt tipo="rotulo" tom="textoFraco" style={NUMERAL}>
+          {quantos}
+        </Txt>
+        <Txt tipo="corpo" negrito style={NUMERAL}>
+          {dinheiro(linha.receita)}
         </Txt>
       </Linha>
       <View style={{ height: ALTURA_BARRA }}>
@@ -265,21 +234,11 @@ function LinhaDeProduto({ linha, teto }: { linha: ProdutoVendas; teto: number })
           <View
             style={{
               width: `${fracao * 100}%`,
-              // Um lucro pequeno ainda aparece, e o contorno da vazada ainda
-              // fecha um retângulo.
+              // Uma venda pequena ainda aparece.
               minWidth: ALTURA_BARRA,
               height: '100%',
               borderRadius: Raio.pill,
-              // `Grafico.prejuizo` e `Grafico.lucro` quase empatam em
-              // luminosidade (ver o tema), e são o par vermelho/verde que
-              // protan e deutan confundem. O que separa os dois aqui é a barra
-              // VAZADA, com contorno -- o mesmo papel da hachura no gráfico de
-              // dias -- e a palavra "prejuízo" ao lado. Pintar as duas de
-              // sólido deixaria o prejuízo idêntico ao lucro pra quem não
-              // enxerga a diferença de matiz.
-              backgroundColor: prejuizo ? 'transparent' : grafico.lucro,
-              borderWidth: prejuizo ? 1.5 : 0,
-              borderColor: grafico.prejuizo,
+              backgroundColor: grafico.barra,
             }}
           />
         ) : null}
@@ -304,7 +263,7 @@ function GastosContraVendas({
   soma,
   dias,
 }: {
-  soma: { receita: number; gastos: number; compras: number; despesas: number };
+  soma: { receita: number; gastos: number };
   dias: DiaResumo[];
 }) {
   const { cores, grafico } = useTema();
@@ -338,12 +297,7 @@ function GastosContraVendas({
         </View>
       </View>
 
-      <View
-        accessible
-        accessibilityLabel={`Saiu ${dinheiro(soma.gastos)}: mercado ${dinheiro(
-          soma.compras,
-        )}, outros gastos ${dinheiro(soma.despesas)}`}
-        style={{ gap: Espaco.xs }}>
+      <View accessible accessibilityLabel={`Saiu ${dinheiro(soma.gastos)}`} style={{ gap: Espaco.xs }}>
         <Linha entre>
           <Txt tipo="rotulo" tom="textoFraco">
             Saiu
@@ -355,18 +309,11 @@ function GastosContraVendas({
         <View style={{ height: ALTURA_PROPORCAO }}>
           <View style={barra(soma.gastos, cores.marca)} />
         </View>
-        {/* O que saiu, aberto: mercado vira estoque, o resto não. São contas
-            diferentes na cabeça dela. */}
-        <Txt tipo="rotulo" tom="textoFraco" style={NUMERAL}>
-          mercado {dinheiro(soma.compras)} · outros {dinheiro(soma.despesas)}
-        </Txt>
       </View>
 
       <View style={{ minHeight: Touch.alvoSecundario, justifyContent: 'center' }}>
         <Txt tipo="corpo" negrito tom={sobrou < 0 ? 'negativo' : 'texto'}>
-          {sobrou < 0
-            ? `Faltou ${dinheiroSemSinal(sobrou)} no caixa`
-            : `Sobrou ${dinheiro(sobrou)} no caixa`}
+          {sobrou < 0 ? `Faltou ${dinheiroSemSinal(sobrou)}` : `Sobrou ${dinheiro(sobrou)}`}
         </Txt>
         {/* Compra grande concentrada em poucos dias é o caso em que "saiu mais
             que entrou" não quer dizer mês ruim -- a nota cobre as semanas
@@ -374,8 +321,8 @@ function GastosContraVendas({
         {comGasto > 0 && comGasto <= 3 && soma.gastos > 0 ? (
           <Txt tipo="rotulo" tom="textoFraco">
             {comGasto === 1
-              ? 'a compra do período saiu num dia só'
-              : `as compras saíram em ${comGasto} dias`}
+              ? 'o gasto do período saiu num dia só'
+              : `os gastos saíram em ${comGasto} dias`}
           </Txt>
         ) : null}
       </View>

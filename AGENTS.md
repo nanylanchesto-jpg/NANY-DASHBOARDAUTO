@@ -7,11 +7,30 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 O `README.md` explica o produto e o *porquê* das decisões. Isto aqui é a lista
 curta do que se quebra em silêncio: coisas que parecem melhorias e não são.
 
-**A aritmética de estoque mora em gatilho no Postgres, não na tela.** Se o
-saldo de um ingrediente vier errado, o erro está em `aplica_compra()`,
-`baixa_receita()` ou `cancelar_*()` — não na tela. Corrigir na tela cria duas
-verdades, porque a leitura por foto e o lançamento manual passam pelo mesmo
-`INSERT`.
+**O app NÃO pede ingrediente, receita nem estoque — e isso é decisão da dona.**
+Ela achou a versão anterior complicada demais (a nota conferida item por item,
+com quantidade, unidade e preço; a receita de cada hot-dog montada ingrediente
+a ingrediente). Agora produto é só nome e preço, e o mercado é um GASTO com o
+total da nota (`despesas`, descrição "Mercado · <onde>"), lido pela foto ou
+digitado. Não traga de volta tela de receita, estoque ou "lista de compras"
+como melhoria: foi exatamente o que a fez travar. O banco continua com as
+tabelas e os gatilhos (compra antiga e receita antiga seguem valendo por
+baixo), mas nada novo entra em `compras`/`compra_itens`.
+
+**Lucro é vendas menos gastos, em TODA tela.** `lucroDe()` em `lib/dados.ts`:
+`receita − compras − despesas` do período. `lucro_vendas` (a margem dos
+ingredientes) não aparece mais em lugar nenhum — sem receita cadastrada ela
+sai igual ao preço cheio, que é um número bonito e falso. No dia do mercado o
+lucro do dia fica negativo; a Hoje explica com "o gasto rende outros dias", e
+é na semana/mês (Planejar, Painel) que a compra se dilui. Não troque por
+`lucro_vendas` "porque é o lucro de verdade": só seria com receita, e receita
+é o que ela não vai cadastrar.
+
+**A aritmética de estoque mora em gatilho no Postgres, não na tela.** Nenhuma
+tela mostra mais estoque, mas a venda de um produto que ainda tem receita
+antiga continua baixando saldo, e o "Apagar" de uma compra antiga em Gastos
+estorna. Se o saldo vier errado, o erro está em `aplica_compra()`,
+`baixa_receita()` ou `cancelar_*()` — não na tela.
 
 **Os `REVOKE` nas migrations são deliberados.** A tela não tem `UPDATE`/`DELETE`
 em `compra_itens`, em `vendas` nem nas colunas `estoque_base`/`custo_base` de
@@ -79,6 +98,13 @@ A volta ao tomate/mostarda/creme também foi a pedido dela — o PI06 registra
 "abandono do registro diário" como o risco mais alto, e uma tela que ela
 reconhece como sua é parte de não ser abandonada.
 
+**A foto da nota grava o TOTAL impresso, não a soma dos itens.** A Edge
+Function devolve `total` (sacola e desconto incluídos) e `totalDaNota()` só
+soma os itens quando ele não vem — que é o caso da função publicada antes deste
+campo. A tela mostra um número só, pra ela conferir com o papel. Data do gasto
+é escolhida por toque (Hoje / Ontem / a data da nota) e vai pro banco como
+`AAAA-MM-DD`: texto "10/09/2026" o Postgres lê como mês/dia.
+
 **A `GEMINI_API_KEY` nunca vai pro cliente.** Só `EXPO_PUBLIC_*` entra no
 bundle, e tudo ali é legível no DevTools. Na Edge Function, três detalhes que
 já custaram bug no Almoxá: PDF vai como `image_url` (a camada
@@ -96,21 +122,22 @@ react-native-web 0.21 descarta esse objeto sem avisar, e o RN 0.86 entende as
 duas formas.
 
 **São QUATRO abas, e cada uma tem um verbo.** Hoje (olhar o dia), Vender
-(fazer), Painel (olhar o período) e Planejar (mexer: metas, semana, compras,
-gastos, estoque, produtos, histórico — numa pilha). Começou com três; o Painel
-entrou depois, a pedido da dona, e levou junto a tela Lucro, que deixou de
-existir no Planejar. A regra que sobreviveu às duas versões: o que não responde
-"quanto vendi / quanto ganhei / preciso vender agora / tem algo pedindo
-atenção" NÃO fica na Hoje. Cinco abas não cabem — em 360 px o rótulo quebra.
+(fazer), Painel (olhar o período) e Planejar (mexer: gastos, produtos, metas,
+histórico — numa pilha). Começou com três; o Painel entrou depois, a pedido da
+dona, e levou junto a tela Lucro. O Planejar já teve sete itens (com Semana,
+Compras e Estoque) e ela se perdia; ficaram quatro. A regra da Hoje: o que não
+responde "quanto vendi / quanto gastei e sobrou / preciso vender agora" NÃO
+fica lá. Cinco abas não cabem — em 360 px o rótulo quebra.
 
 `resetOnFocus` está DESLIGADO no Planejar de propósito: a conferência de uma
-nota lida pelo Gemini (que gasta cota) tem que sobreviver a uma ida ao Vender.
+nota lida pelo Gemini (que gasta cota), em Gastos, tem que sobreviver a uma ida
+ao Vender.
 
 **Uma mostarda por tela.** `Botao variante="primaria"` é a resposta pra "o que
 eu faço aqui?", e duas respostas não respondem nada. Por isso o atalho
-"Fotografar nota" é `secundaria` na Hoje e no Painel, mesmo sendo o que
-alimenta custo, estoque e gastos: no aperto da tarde, quem tem que gritar é o
-Vender.
+"Anotar gasto" é `secundaria` na Hoje e no Painel, mesmo sendo metade da conta
+do lucro: no aperto da tarde, quem tem que gritar é o Vender. Em Gastos a
+mostarda é "Tirar foto da nota"; o "Anotar gasto" digitado é `secundaria`.
 
 **A chuva de hot-dogs nunca atrasa um toque.** `ChuvaDeHotdogs` é sempre
 `pointerEvents: 'none'` e sempre desenhada POR CIMA de uma tela já pronta --
@@ -139,7 +166,7 @@ fechamento soma.
 npm run typecheck     # passa
 npm run lint          # passa
 npm run checa-paleta  # passa: 82 pares
-npm run build:web     # passa; gera dist/ com as 13 rotas
+npm run build:web     # passa; gera dist/ com as 10 rotas
 ```
 
 A migration `20260921120000` (pedido, pagamento, metas, despesas) foi validada
@@ -156,6 +183,11 @@ modelo desligado (`reasoning_effort: none`, ajustável pelo secret
 `GEMINI_ESFORCO`), teto de saída e orçamento de tempo. Medido contra a API de
 verdade: leitura boa em 3,2 s e 18,1 s (era 32 s); quando o Gemini congestiona
 — ~1 em 3 chamadas — o erro chega em ~78 s (era 146 s).
+
+A versão simplificada (gasto pelo total, sem receita/estoque) mudou a Edge
+Function pra devolver `total`. Até ela ser publicada de novo
+(`npx supabase functions deploy ler-notinha`), o app funciona com a soma dos
+itens, que costuma dar alguns centavos a menos que a nota.
 
 Ainda não executados:
 

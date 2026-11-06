@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { Fragment } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { GraficoBarras } from '@/components/grafico-barras';
@@ -11,9 +10,7 @@ import {
   Botao,
   Carregando,
   Cartao,
-  Divisor,
   Indicador,
-  ItemLista,
   Linha,
   Secao,
   Tela,
@@ -22,18 +19,15 @@ import {
 import { Espaco, Touch } from '@/constants/theme';
 import { useTema } from '@/hooks/use-tema';
 import {
-  custoDoProduto,
+  gastosDe,
+  lucroDe,
   useFechamento,
   useMetas,
-  useParaComprar,
-  useProdutos,
   useResumoPorDia,
   type DiaResumo,
   type Fechamento,
   type Meta,
-  type ParaComprar,
   type Periodo,
-  type Produto,
 } from '@/lib/dados';
 import { dataLocal, diaDaSemana, dinheiro, dinheiroSemSinal, inteiro } from '@/lib/formato';
 import { hojeDaSerie, metaAtiva, somaPeriodo } from '@/lib/periodo';
@@ -41,8 +35,8 @@ import { hojeDaSerie, metaAtiva, somaPeriodo } from '@/lib/periodo';
 /**
  * Hoje: a tela que ela abre de relance entre um cliente e outro.
  *
- * Responde, nesta ordem, a quatro perguntas -- quanto vendi, quanto ganhei,
- * preciso vender mais, tem algo pedindo atenção -- e oferece UMA ação: vender.
+ * Responde, nesta ordem, a três perguntas -- quanto vendi, quanto gastei e
+ * quanto sobrou, preciso vender mais -- e oferece UMA ação: vender.
  * Tudo o que não responde a nenhuma delas mora no Planejar; o que só às vezes
  * responde (meta, avisos) só aparece quando existe.
  */
@@ -55,18 +49,13 @@ export default function Hoje() {
   // ser condicional, então o condicional está no argumento: sem meta de mês a
   // chave é a mesma da linha de cima e o React Query não busca duas vezes.
   const serieDaMeta = useResumoPorDia(meta?.periodo === 'mes' ? 31 : 7);
-  const comprar = useParaComprar();
-  const produtos = useProdutos();
 
   // A meta entra na espera de propósito: ela fica ACIMA do botão Vender, e
   // aparecer depois empurraria o botão pra baixo do dedo que já ia tocar.
-  // Os avisos e o gráfico ficam abaixo dele e podem chegar quando chegarem.
   const carregando =
     fechamento.isLoading || serie.isLoading || metas.isLoading || serieDaMeta.isLoading;
   const falha = fechamento.error ?? serie.error;
-  const atualizando =
-    !carregando &&
-    (fechamento.isFetching || serie.isFetching || comprar.isFetching || produtos.isFetching);
+  const atualizando = !carregando && (fechamento.isFetching || serie.isFetching);
 
   const dias = serie.data ?? [];
   // O "hoje" é o do banco (`dia_local()`), nunca o relógio do celular.
@@ -96,9 +85,9 @@ export default function Hoje() {
             }}>
             {falha instanceof Error ? falha.message : 'Não consegui carregar os números.'}
           </Aviso>
-          {/* Sem os números ela ainda precisa conseguir vender e lançar nota. */}
+          {/* Sem os números ela ainda precisa conseguir vender e anotar gasto. */}
           <BotaoVender />
-          <BotaoFotografarNota />
+          <BotaoAnotarGasto />
         </View>
       ) : carregando ? (
         <Carregando />
@@ -113,16 +102,10 @@ export default function Hoje() {
               />
             ) : null}
             <BotaoVender />
-            <BotaoFotografarNota />
+            <BotaoAnotarGasto />
           </View>
 
           <View style={{ paddingTop: Espaco.sm }}>
-            {/* Espera as duas listas: chegando uma de cada vez, os avisos de
-                produto apareceriam e depois desceriam pra dar lugar aos de
-                estoque, que são mais urgentes. */}
-            {comprar.isLoading || produtos.isLoading ? null : (
-              <Atencao ingredientes={comprar.data} produtos={produtos.data} />
-            )}
             <UltimosDias dias={dias} metaDiaria={meta?.periodo === 'dia' ? meta.valor : undefined} />
           </View>
         </>
@@ -160,22 +143,15 @@ function dataCurta(iso: string) {
 
 function Numeros({ dados }: { dados: Fechamento | null }) {
   const receita = dados?.receita ?? 0;
-  const lucro = dados?.lucro_vendas ?? 0;
-  const caixa = dados?.caixa ?? 0;
+  const gastos = dados ? gastosDe(dados) : 0;
+  const lucro = dados ? lucroDe(dados) : 0;
   const pedidos = dados?.atendimentos ?? 0;
 
-  // Lucro e caixa discordam no dia de feira: ela compra a semana inteira
-  // hoje, e o caixa fica negativo com as vendas dando lucro. Sem dizer POR QUÊ
-  // na tela, isso parece prejuízo e ela conclui que o app está errado. Uma
-  // legenda de duas palavras basta; o parágrafo que havia aqui ninguém lia.
-  const motivoDoCaixa =
-    caixa < 0 && dados
-      ? dados.compras > 0
-        ? 'compras de hoje'
-        : dados.despesas > 0
-          ? 'gastos de hoje'
-          : undefined
-      : undefined;
+  // No dia do mercado o lucro do dia fica negativo mesmo com a lanchonete
+  // vendendo bem: a compra cobre a semana. Sem dizer POR QUÊ, isso parece
+  // prejuízo de verdade e ela conclui que o app está errado. Uma legenda curta
+  // basta; o lucro da semana (Planejar, Painel) é onde a compra se dilui.
+  const motivo = lucro < 0 && gastos > 0 ? 'o gasto rende outros dias' : undefined;
 
   return (
     <>
@@ -194,7 +170,9 @@ function Numeros({ dados }: { dados: Fechamento | null }) {
 
       <Cartao>
         <Linha style={{ gap: Espaco.lg, alignItems: 'flex-start' }}>
-          {/* No negativo o RÓTULO vira "Prejuízo" e o valor vai sem sinal: a
+          <Indicador style={{ flex: 1 }} rotulo="Gastos" valor={dinheiro(gastos)} />
+          {/* Lucro = vendas − gastos, a conta que ela faz de cabeça. No
+              negativo o RÓTULO vira "Prejuízo" e o valor vai sem sinal: a
               palavra carrega o estado, não o tom de vermelho nem um "−" fácil
               de não ver. */}
           <Indicador
@@ -202,13 +180,7 @@ function Numeros({ dados }: { dados: Fechamento | null }) {
             rotulo={lucro < 0 ? 'Prejuízo' : 'Lucro'}
             valor={dinheiroSemSinal(lucro)}
             tom={lucro > 0 ? 'positivo' : lucro < 0 ? 'negativo' : 'texto'}
-          />
-          <Indicador
-            style={{ flex: 1 }}
-            rotulo="Caixa"
-            valor={dinheiro(caixa)}
-            tom={caixa < 0 ? 'negativo' : 'texto'}
-            legenda={motivoDoCaixa}
+            legenda={motivo}
           />
         </Linha>
       </Cartao>
@@ -293,142 +265,21 @@ function BotaoVender() {
 }
 
 /**
- * Atalho da foto da nota.
+ * Atalho pra anotar gasto (foto da nota ou valor digitado).
  *
- * A câmera é o que alimenta custo, estoque e gastos, e vivia três toques
- * fundo (Planejar → Compras → Fotografar). Aqui ela fica à vista no lugar em
- * que ela já olha várias vezes por dia.
+ * Sem ele, o gasto vivia dois toques fundo (Planejar → Gastos) e ela esquecia
+ * de anotar -- e sem gasto o lucro sai igual às vendas.
  *
  * Secundária, e essa é a parte que não pode mudar: a mostarda é UMA por tela,
- * e nesta tela ela é o Vender. Fotografar nota é coisa de fim de expediente,
+ * e nesta tela ela é o Vender. Anotar gasto é coisa de fim de expediente,
  * vender é coisa do balcão -- se as duas gritassem igual, a que importa no
  * aperto da tarde deixaria de ser óbvia.
  */
-function BotaoFotografarNota() {
+function BotaoAnotarGasto() {
   return (
-    <Botao
-      variante="secundaria"
-      icone="camera"
-      onPress={() => router.push('/planejar/compras')}>
-      Fotografar nota
+    <Botao variante="secundaria" icone="camera" onPress={() => router.push('/planejar/gastos')}>
+      Anotar gasto
     </Botao>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Atenção
-// ---------------------------------------------------------------------------
-
-/** Acima disso a lista vira inventário; o resto fica atrás de um "Mais N". */
-const MAX_AVISOS = 3;
-
-type Alerta = {
-  chave: string;
-  titulo: string;
-  valor: string;
-  tom: 'negativo' | 'atencao';
-  destino: 'estoque' | 'produtos';
-};
-
-/**
- * Só o que pede ação, na ordem da urgência: saldo negativo (compra que não
- * foi lançada), ingrediente que acaba em menos de 3 dias, produto à venda sem
- * custo nenhum (o lucro dele está saindo igual ao preço cheio).
- *
- * Listar o estoque inteiro transformaria o bloco em inventário, e ela pararia
- * de olhar -- o que some junto é justamente o aviso do que está acabando. A
- * ordem entre ingredientes já vem do banco (`ingredientes_para_comprar`).
- */
-function alertas(ingredientes: ParaComprar[], produtos: Produto[]): Alerta[] {
-  const lista: Alerta[] = [];
-  for (const i of ingredientes) {
-    if (i.estoque_base < 0) {
-      lista.push({
-        chave: i.id,
-        titulo: i.nome,
-        valor: 'lançar compra',
-        tom: 'negativo',
-        destino: 'estoque',
-      });
-    } else if (i.dias_restantes !== null && i.dias_restantes < 3) {
-      // Arredonda pra baixo: "acaba em 2 dias" com 2,9 no estoque é o aviso
-      // que chega a tempo; com 3 ela deixaria pra depois.
-      const d = Math.floor(i.dias_restantes);
-      lista.push({
-        chave: i.id,
-        titulo: i.nome,
-        valor: d < 1 ? 'acaba hoje' : `acaba em ${d} ${d === 1 ? 'dia' : 'dias'}`,
-        tom: 'atencao',
-        destino: 'estoque',
-      });
-    }
-  }
-  for (const p of produtos) {
-    if (p.ativo && custoDoProduto(p).tipo === 'ausente') {
-      lista.push({
-        chave: p.id,
-        titulo: p.nome,
-        valor: 'sem custo',
-        tom: 'atencao',
-        destino: 'produtos',
-      });
-    }
-  }
-  return lista;
-}
-
-function abrir(destino: Alerta['destino']) {
-  if (destino === 'produtos') router.push('/planejar/produtos');
-  else router.push('/planejar/estoque');
-}
-
-function Atencao({
-  ingredientes,
-  produtos,
-}: {
-  ingredientes: ParaComprar[] | undefined;
-  produtos: Produto[] | undefined;
-}) {
-  const lista = alertas(ingredientes ?? [], produtos ?? []);
-  if (lista.length === 0) return null;
-
-  // Nunca mais que MAX_AVISOS linhas: passando, a última vira o "Mais N".
-  const visiveis = lista.length > MAX_AVISOS ? lista.slice(0, MAX_AVISOS - 1) : lista;
-  const escondidos = lista.slice(visiveis.length);
-  const destinoDoResto: Alerta['destino'] = escondidos.every((a) => a.destino === 'produtos')
-    ? 'produtos'
-    : 'estoque';
-
-  return (
-    <Secao titulo="Atenção">
-      <Cartao style={{ paddingVertical: Espaco.xs }}>
-        {visiveis.map((a, i) => (
-          <Fragment key={a.chave}>
-            {i > 0 ? <Divisor /> : null}
-            <ItemLista
-              alerta
-              titulo={a.titulo}
-              valor={a.valor}
-              tomValor={a.tom}
-              onPress={() => abrir(a.destino)}
-            />
-          </Fragment>
-        ))}
-        {escondidos.length > 0 ? (
-          <>
-            <Divisor />
-            <ItemLista
-              icone="mais"
-              titulo={`Mais ${escondidos.length}`}
-              rotuloAcessivel={`Mais ${escondidos.length} ${
-                escondidos.length === 1 ? 'aviso' : 'avisos'
-              }`}
-              onPress={() => abrir(destinoDoResto)}
-            />
-          </>
-        ) : null}
-      </Cartao>
-    </Secao>
   );
 }
 
